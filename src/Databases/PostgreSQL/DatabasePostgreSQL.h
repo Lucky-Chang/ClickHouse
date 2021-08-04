@@ -32,6 +32,7 @@ public:
         const String & metadata_path_,
         const ASTStorage * database_engine_define,
         const String & dbname_,
+        UUID uuid_,
         const String & postgres_dbname,
         postgres::PoolWithFailoverPtr pool_,
         bool cache_tables_);

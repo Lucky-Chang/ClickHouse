@@ -49,12 +49,13 @@ static const std::chrono::seconds lock_acquire_timeout{10};
 DatabaseMySQL::DatabaseMySQL(
     ContextPtr context_,
     const String & database_name_,
+    UUID uuid_,
     const String & metadata_path_,
     const ASTStorage * database_engine_define_,
     const String & database_name_in_mysql_,
     std::unique_ptr<ConnectionMySQLSettings> settings_,
     mysqlxx::PoolWithFailover && pool)
-    : IDatabase(database_name_)
+    : IDatabase(database_name_, uuid_)
     , WithContext(context_->getGlobalContext())
     , metadata_path(metadata_path_)
     , database_engine_define(database_engine_define_->clone())

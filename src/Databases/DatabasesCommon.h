@@ -39,7 +39,7 @@ protected:
     Tables tables;
     Poco::Logger * log;
 
-    DatabaseWithOwnTablesBase(const String & name_, const String & logger, ContextPtr context);
+    DatabaseWithOwnTablesBase(const String & name_, UUID uuid, const String & logger, ContextPtr context);
 
     void attachTableUnlocked(const String & table_name, const StoragePtr & table, std::unique_lock<std::mutex> & lock);
     StoragePtr detachTableUnlocked(const String & table_name, std::unique_lock<std::mutex> & lock);

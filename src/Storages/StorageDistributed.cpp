@@ -363,11 +363,11 @@ std::optional<QueryProcessingStage::Enum> getOptimizedQueryProcessingStage(const
     return QueryProcessingStage::Complete;
 }
 
-size_t getClusterQueriedNodes(const Settings & settings, const ClusterPtr & cluster)
+size_t getClusterQueriedNodes(const Settings & /*settings*/, const ClusterPtr & cluster)
 {
     size_t num_local_shards = cluster->getLocalShardCount();
     size_t num_remote_shards = cluster->getRemoteShardCount();
-    return (num_remote_shards * settings.max_parallel_replicas) + num_local_shards;
+    return num_remote_shards + num_local_shards;
 }
 
 }
@@ -794,9 +794,6 @@ void StorageDistributed::alter(const AlterCommands & params, ContextPtr local_co
 
 void StorageDistributed::startup()
 {
-    if (remote_database.empty() && !remote_table_function_ptr && !getCluster()->maybeCrossReplication())
-        LOG_WARNING(log, "Name of remote database is empty. Default database will be used implicitly.");
-
     if (!storage_policy)
         return;
 

@@ -3,7 +3,6 @@
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMergeTree.h>
-#include <Storages/StorageReplicatedMergeTree.h>
 
 #include <Common/Macros.h>
 #include <Common/OptimizedRegularExpression.h>
@@ -297,10 +296,6 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
     String name_part = args.engine_name.substr(0, args.engine_name.size() - strlen("MergeTree"));
 
-    bool replicated = startsWith(name_part, "Replicated");
-    if (replicated)
-        name_part = name_part.substr(strlen("Replicated"));
-
     MergeTreeData::MergingParams merging_params;
     merging_params.mode = MergeTreeData::MergingParams::Ordinary;
 
@@ -340,20 +335,6 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         needed_params += desc;
         needed_params += "]";
     };
-
-    if (replicated)
-    {
-        if (is_extended_storage_def)
-        {
-            add_optional_param("path in ZooKeeper");
-            add_optional_param("replica name");
-        }
-        else
-        {
-            add_mandatory_param("path in ZooKeeper");
-            add_mandatory_param("replica name");
-        }
-    }
 
     if (!is_extended_storage_def)
     {
@@ -443,116 +424,6 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         }
     }
 
-    /// For Replicated.
-    String zookeeper_path;
-    String replica_name;
-    bool allow_renaming = true;
-
-    if (replicated)
-    {
-        bool has_arguments = arg_num + 2 <= arg_cnt;
-        bool has_valid_arguments = has_arguments && engine_args[arg_num]->as<ASTLiteral>() && engine_args[arg_num + 1]->as<ASTLiteral>();
-
-        ASTLiteral * ast_zk_path;
-        ASTLiteral * ast_replica_name;
-
-        if (has_valid_arguments)
-        {
-            /// Get path and name from engine arguments
-            ast_zk_path = engine_args[arg_num]->as<ASTLiteral>();
-            if (ast_zk_path && ast_zk_path->value.getType() == Field::Types::String)
-                zookeeper_path = safeGet<String>(ast_zk_path->value);
-            else
-                throw Exception(
-                    "Path in ZooKeeper must be a string literal" + getMergeTreeVerboseHelp(is_extended_storage_def),
-                    ErrorCodes::BAD_ARGUMENTS);
-            ++arg_num;
-
-            ast_replica_name = engine_args[arg_num]->as<ASTLiteral>();
-            if (ast_replica_name && ast_replica_name->value.getType() == Field::Types::String)
-                replica_name = safeGet<String>(ast_replica_name->value);
-            else
-                throw Exception(
-                    "Replica name must be a string literal" + getMergeTreeVerboseHelp(is_extended_storage_def), ErrorCodes::BAD_ARGUMENTS);
-
-            if (replica_name.empty())
-                throw Exception(
-                    "No replica name in config" + getMergeTreeVerboseHelp(is_extended_storage_def), ErrorCodes::NO_REPLICA_NAME_GIVEN);
-            ++arg_num;
-        }
-        else if (is_extended_storage_def && (arg_cnt == 0 || !engine_args[arg_num]->as<ASTLiteral>() || (arg_cnt == 1 && merging_params.mode == MergeTreeData::MergingParams::Graphite)))
-        {
-            /// Try use default values if arguments are not specified.
-            /// Note: {uuid} macro works for ON CLUSTER queries when database engine is Atomic.
-            zookeeper_path = args.getContext()->getConfigRef().getString("default_replica_path", "/clickhouse/tables/{uuid}/{shard}");
-            /// TODO maybe use hostname if {replica} is not defined?
-            replica_name = args.getContext()->getConfigRef().getString("default_replica_name", "{replica}");
-
-            /// Modify query, so default values will be written to metadata
-            assert(arg_num == 0);
-            ASTs old_args;
-            std::swap(engine_args, old_args);
-            auto path_arg = std::make_shared<ASTLiteral>(zookeeper_path);
-            auto name_arg = std::make_shared<ASTLiteral>(replica_name);
-            ast_zk_path = path_arg.get();
-            ast_replica_name = name_arg.get();
-            engine_args.emplace_back(std::move(path_arg));
-            engine_args.emplace_back(std::move(name_arg));
-            std::move(std::begin(old_args), std::end(old_args), std::back_inserter(engine_args));
-            arg_num = 2;
-            arg_cnt += 2;
-        }
-        else
-            throw Exception("Expected two string literal arguments: zookeeper_path and replica_name", ErrorCodes::BAD_ARGUMENTS);
-
-        /// Allow implicit {uuid} macros only for zookeeper_path in ON CLUSTER queries
-        bool is_on_cluster = args.getLocalContext()->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
-        bool is_replicated_database = args.getLocalContext()->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY &&
-                                      DatabaseCatalog::instance().getDatabase(args.table_id.database_name)->getEngineName() == "Replicated";
-        bool allow_uuid_macro = is_on_cluster || is_replicated_database || args.query.attach;
-
-        /// Unfold {database} and {table} macro on table creation, so table can be renamed.
-        /// We also unfold {uuid} macro, so path will not be broken after moving table from Atomic to Ordinary database.
-        if (!args.attach)
-        {
-            if (is_replicated_database && !is_extended_storage_def)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Old syntax is not allowed for ReplicatedMergeTree tables in Replicated databases");
-
-            Macros::MacroExpansionInfo info;
-            /// NOTE: it's not recursive
-            info.expand_special_macros_only = true;
-            info.table_id = args.table_id;
-            if (!allow_uuid_macro)
-                info.table_id.uuid = UUIDHelpers::Nil;
-            zookeeper_path = args.getContext()->getMacros()->expand(zookeeper_path, info);
-
-            info.level = 0;
-            info.table_id.uuid = UUIDHelpers::Nil;
-            replica_name = args.getContext()->getMacros()->expand(replica_name, info);
-        }
-
-        ast_zk_path->value = zookeeper_path;
-        ast_replica_name->value = replica_name;
-
-        /// Expand other macros (such as {shard} and {replica}). We do not expand them on previous step
-        /// to make possible copying metadata files between replicas.
-        Macros::MacroExpansionInfo info;
-        info.table_id = args.table_id;
-        if (!allow_uuid_macro)
-            info.table_id.uuid = UUIDHelpers::Nil;
-        zookeeper_path = args.getContext()->getMacros()->expand(zookeeper_path, info);
-
-        info.level = 0;
-        info.table_id.uuid = UUIDHelpers::Nil;
-        replica_name = args.getContext()->getMacros()->expand(replica_name, info);
-
-        /// We do not allow renaming table with these macros in metadata, because zookeeper_path will be broken after RENAME TABLE.
-        /// NOTE: it may happen if table was created by older version of ClickHouse (< 20.10) and macros was not unfolded on table creation
-        /// or if one of these macros is recursively expanded from some other macro.
-        if (info.expanded_database || info.expanded_table)
-            allow_renaming = false;
-    }
-
     /// This merging param maybe used as part of sorting key
     std::optional<String> merging_param_key_arg;
 
@@ -631,11 +502,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     metadata.setColumns(args.columns);
     metadata.setComment(args.comment);
 
-    std::unique_ptr<MergeTreeSettings> storage_settings;
-    if (replicated)
-        storage_settings = std::make_unique<MergeTreeSettings>(args.getContext()->getReplicatedMergeTreeSettings());
-    else
-        storage_settings = std::make_unique<MergeTreeSettings>(args.getContext()->getMergeTreeSettings());
+    std::unique_ptr<MergeTreeSettings> storage_settings = std::make_unique<MergeTreeSettings>(args.getContext()->getMergeTreeSettings());
 
     if (is_extended_storage_def)
     {
@@ -779,32 +646,17 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
     if (arg_num != arg_cnt)
         throw Exception("Wrong number of engine arguments.", ErrorCodes::BAD_ARGUMENTS);
-
-    if (replicated)
-        return StorageReplicatedMergeTree::create(
-            zookeeper_path,
-            replica_name,
-            args.attach,
-            args.table_id,
-            args.relative_data_path,
-            metadata,
-            args.getContext(),
-            date_column_name,
-            merging_params,
-            std::move(storage_settings),
-            args.has_force_restore_data_flag,
-            allow_renaming);
-    else
-        return StorageMergeTree::create(
-            args.table_id,
-            args.relative_data_path,
-            metadata,
-            args.attach,
-            args.getContext(),
-            date_column_name,
-            merging_params,
-            std::move(storage_settings),
-            args.has_force_restore_data_flag);
+    
+    return StorageMergeTree::create(
+        args.table_id,
+        args.relative_data_path,
+        metadata,
+        args.attach,
+        args.getContext(),
+        date_column_name,
+        merging_params,
+        std::move(storage_settings),
+        args.has_force_restore_data_flag);
 }
 
 
@@ -826,17 +678,6 @@ void registerStorageMergeTree(StorageFactory & factory)
     factory.registerStorage("SummingMergeTree", create, features);
     factory.registerStorage("GraphiteMergeTree", create, features);
     factory.registerStorage("VersionedCollapsingMergeTree", create, features);
-
-    features.supports_replication = true;
-    features.supports_deduplication = true;
-
-    factory.registerStorage("ReplicatedMergeTree", create, features);
-    factory.registerStorage("ReplicatedCollapsingMergeTree", create, features);
-    factory.registerStorage("ReplicatedReplacingMergeTree", create, features);
-    factory.registerStorage("ReplicatedAggregatingMergeTree", create, features);
-    factory.registerStorage("ReplicatedSummingMergeTree", create, features);
-    factory.registerStorage("ReplicatedGraphiteMergeTree", create, features);
-    factory.registerStorage("ReplicatedVersionedCollapsingMergeTree", create, features);
 }
 
 }

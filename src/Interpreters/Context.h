@@ -57,7 +57,6 @@ using InterserverCredentialsPtr = std::shared_ptr<const InterserverCredentials>;
 class InterserverIOHandler;
 class BackgroundSchedulePool;
 class MergeList;
-class ReplicatedFetchList;
 class Cluster;
 class Compiler;
 class MarkCache;
@@ -79,7 +78,6 @@ class OpenTelemetrySpanLog;
 struct MergeTreeSettings;
 class StorageS3Settings;
 class IDatabase;
-class DDLWorker;
 class ITableFunction;
 class Block;
 class ActionLocksManager;
@@ -102,8 +100,6 @@ using StoragePolicyPtr = std::shared_ptr<const IStoragePolicy>;
 using StoragePoliciesMap = std::map<String, StoragePolicyPtr>;
 class StoragePolicySelector;
 using StoragePolicySelectorPtr = std::shared_ptr<const StoragePolicySelector>;
-struct PartUUIDs;
-using PartUUIDsPtr = std::shared_ptr<PartUUIDs>;
 class KeeperStorageDispatcher;
 
 class IOutputFormat;
@@ -115,9 +111,6 @@ struct BackgroundTaskSchedulingSettings;
 
 class Throttler;
 using ThrottlerPtr = std::shared_ptr<Throttler>;
-
-class ZooKeeperMetadataTransaction;
-using ZooKeeperMetadataTransactionPtr = std::shared_ptr<ZooKeeperMetadataTransaction>;
 
 /// Callback for external tables initializer
 using ExternalTablesInitializer = std::function<void(ContextPtr)>;
@@ -280,9 +273,6 @@ private:
     using SampleBlockCache = std::unordered_map<std::string, Block>;
     mutable SampleBlockCache sample_block_cache;
 
-    PartUUIDsPtr part_uuids; /// set of parts' uuids, is used for query parts deduplication
-    PartUUIDsPtr ignored_part_uuids; /// set of parts' uuids are meant to be excluded from query processing
-
     NameToNameMap query_parameters;   /// Dictionary with query parameters for prepared statements.
                                                      /// (key=name, value)
 
@@ -291,12 +281,6 @@ private:
                                    /// logger, some query identification information, profiling guards, etc. This field is
                                    /// to be customized in HTTP and TCP servers by overloading the customizeContext(DB::ContextPtr)
                                    /// methods.
-
-    ZooKeeperMetadataTransactionPtr metadata_transaction;    /// Distributed DDL context. I'm not sure if it's a suitable place for this,
-                                                    /// but it's the easiest way to pass this through the whole stack from executeQuery(...)
-                                                    /// to DatabaseOnDisk::commitCreateTable(...) or IStorage::alter(...) without changing
-                                                    /// thousands of signatures.
-                                                    /// And I hope it will be replaced with more common Transaction sometime.
 
     Context();
     Context(const Context &);
@@ -612,14 +596,9 @@ public:
     MergeList & getMergeList();
     const MergeList & getMergeList() const;
 
-    ReplicatedFetchList & getReplicatedFetchList();
-    const ReplicatedFetchList & getReplicatedFetchList() const;
-
     /// If the current session is expired at the time of the call, synchronously creates and returns a new session with the startNewSession() call.
     /// If no ZooKeeper configured, throws an exception.
     std::shared_ptr<zkutil::ZooKeeper> getZooKeeper() const;
-    /// Same as above but return a zookeeper connection from auxiliary_zookeepers configuration entry.
-    std::shared_ptr<zkutil::ZooKeeper> getAuxiliaryZooKeeper(const String & name) const;
 
 #if USE_NURAFT
     std::shared_ptr<KeeperStorageDispatcher> & getKeeperStorageDispatcher() const;
@@ -627,12 +606,8 @@ public:
     void initializeKeeperStorageDispatcher() const;
     void shutdownKeeperStorageDispatcher() const;
 
-    /// Set auxiliary zookeepers configuration at server starting or configuration reloading.
-    void reloadAuxiliaryZooKeepersConfigIfChanged(const ConfigurationPtr & config);
     /// Has ready or expired ZooKeeper
     bool hasZooKeeper() const;
-    /// Has ready or expired auxiliary ZooKeeper
-    bool hasAuxiliaryZooKeeper(const String & name) const;
     /// Reset current zookeeper session. Do not create a new one.
     void resetZooKeeper() const;
     // Reload Zookeeper
@@ -670,14 +645,6 @@ public:
     BackgroundSchedulePool & getMessageBrokerSchedulePool() const;
     BackgroundSchedulePool & getDistributedSchedulePool() const;
 
-    ThrottlerPtr getReplicatedFetchesThrottler() const;
-    ThrottlerPtr getReplicatedSendsThrottler() const;
-
-    /// Has distributed_ddl configuration or not.
-    bool hasDistributedDDL() const;
-    void setDDLWorker(std::unique_ptr<DDLWorker> ddl_worker);
-    DDLWorker & getDDLWorker() const;
-
     std::shared_ptr<Clusters> getClusters() const;
     std::shared_ptr<Cluster> getCluster(const std::string & cluster_name) const;
     std::shared_ptr<Cluster> tryGetCluster(const std::string & cluster_name) const;
@@ -710,7 +677,6 @@ public:
     std::shared_ptr<PartLog> getPartLog(const String & part_database) const;
 
     const MergeTreeSettings & getMergeTreeSettings() const;
-    const MergeTreeSettings & getReplicatedMergeTreeSettings() const;
     const StorageS3Settings & getStorageS3Settings() const;
 
     /// Prevents DROP TABLE if its size is greater than max_size (50GB by default, max_size=0 turn off this check)
@@ -782,14 +748,6 @@ public:
 
     IHostContextPtr & getHostContext();
     const IHostContextPtr & getHostContext() const;
-
-    /// Initialize context of distributed DDL query with Replicated database.
-    void initZooKeeperMetadataTransaction(ZooKeeperMetadataTransactionPtr txn, bool attach_existing = false);
-    /// Returns context of current distributed DDL query or nullptr.
-    ZooKeeperMetadataTransactionPtr getZooKeeperMetadataTransaction() const;
-
-    PartUUIDsPtr getPartUUIDs() const;
-    PartUUIDsPtr getIgnoredPartUUIDs() const;
 
     ReadTaskCallback getReadTaskCallback() const;
     void setReadTaskCallback(ReadTaskCallback && callback);

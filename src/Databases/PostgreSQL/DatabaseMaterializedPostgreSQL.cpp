@@ -8,7 +8,6 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeArray.h>
 #include <Databases/DatabaseOrdinary.h>
-#include <Databases/DatabaseAtomic.h>
 #include <Storages/StoragePostgreSQL.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -42,7 +41,7 @@ DatabaseMaterializedPostgreSQL::DatabaseMaterializedPostgreSQL(
         const String & postgres_database_name,
         const postgres::ConnectionInfo & connection_info_,
         std::unique_ptr<MaterializedPostgreSQLSettings> settings_)
-    : DatabaseAtomic(database_name_, metadata_path_, uuid_, "DatabaseMaterializedPostgreSQL (" + database_name_ + ")", context_)
+    : DatabaseOrdinary(database_name_, metadata_path_, uuid_, "DatabaseMaterializedPostgreSQL (" + database_name_ + ")", context_)
     , database_engine_define(database_engine_define_->clone())
     , is_attach(is_attach_)
     , remote_database_name(postgres_database_name)
@@ -84,7 +83,7 @@ void DatabaseMaterializedPostgreSQL::startSynchronization()
     for (const auto & table_name : tables_to_replicate)
     {
         /// Check nested ReplacingMergeTree table.
-        auto storage = DatabaseAtomic::tryGetTable(table_name, getContext());
+        auto storage = DatabaseOrdinary::tryGetTable(table_name, getContext());
 
         if (storage)
         {
@@ -111,7 +110,7 @@ void DatabaseMaterializedPostgreSQL::startSynchronization()
 
 void DatabaseMaterializedPostgreSQL::loadStoredObjects(ContextMutablePtr local_context, bool has_force_restore_data_flag, bool force_attach)
 {
-    DatabaseAtomic::loadStoredObjects(local_context, has_force_restore_data_flag, force_attach);
+    DatabaseOrdinary::loadStoredObjects(local_context, has_force_restore_data_flag, force_attach);
 
     try
     {
@@ -136,7 +135,7 @@ StoragePtr DatabaseMaterializedPostgreSQL::tryGetTable(const String & name, Cont
     /// replication_handler was shutdown.
     if (local_context->isInternalQuery() || materialized_tables.empty())
     {
-        return DatabaseAtomic::tryGetTable(name, local_context);
+        return DatabaseOrdinary::tryGetTable(name, local_context);
     }
 
     /// Note: In select query we call MaterializedPostgreSQL table and it calls tryGetTable from its nested.
@@ -160,7 +159,7 @@ void DatabaseMaterializedPostgreSQL::createTable(ContextPtr local_context, const
     /// Create table query can only be called from replication thread.
     if (local_context->isInternalQuery())
     {
-        DatabaseAtomic::createTable(local_context, table_name, table, query);
+        DatabaseOrdinary::createTable(local_context, table_name, table, query);
         return;
     }
 
@@ -172,7 +171,7 @@ void DatabaseMaterializedPostgreSQL::createTable(ContextPtr local_context, const
 void DatabaseMaterializedPostgreSQL::shutdown()
 {
     stopReplication();
-    DatabaseAtomic::shutdown();
+    DatabaseOrdinary::shutdown();
 }
 
 
@@ -189,7 +188,7 @@ void DatabaseMaterializedPostgreSQL::stopReplication()
 void DatabaseMaterializedPostgreSQL::dropTable(ContextPtr local_context, const String & table_name, bool no_delay)
 {
     /// Modify context into nested_context and pass query to Atomic database.
-    DatabaseAtomic::dropTable(StorageMaterializedPostgreSQL::makeNestedTableContext(local_context), table_name, no_delay);
+    DatabaseOrdinary::dropTable(StorageMaterializedPostgreSQL::makeNestedTableContext(local_context), table_name, no_delay);
 }
 
 
@@ -198,7 +197,7 @@ void DatabaseMaterializedPostgreSQL::drop(ContextPtr local_context)
     if (replication_handler)
         replication_handler->shutdownFinal();
 
-    DatabaseAtomic::drop(StorageMaterializedPostgreSQL::makeNestedTableContext(local_context));
+    DatabaseOrdinary::drop(StorageMaterializedPostgreSQL::makeNestedTableContext(local_context));
 }
 
 
@@ -206,7 +205,7 @@ DatabaseTablesIteratorPtr DatabaseMaterializedPostgreSQL::getTablesIterator(
         ContextPtr local_context, const DatabaseOnDisk::FilterByNameFunction & filter_by_table_name)
 {
     /// Modify context into nested_context and pass query to Atomic database.
-    return DatabaseAtomic::getTablesIterator(StorageMaterializedPostgreSQL::makeNestedTableContext(local_context), filter_by_table_name);
+    return DatabaseOrdinary::getTablesIterator(StorageMaterializedPostgreSQL::makeNestedTableContext(local_context), filter_by_table_name);
 }
 
 

@@ -86,7 +86,7 @@ BlockInputStreamPtr InterpreterShowCreateQuery::executeImpl()
     if (!create_query)
         throw Exception("Unable to show the create query of " + show_query->table + ". Maybe it was created by the system.", ErrorCodes::THERE_IS_NO_QUERY);
 
-    if (!getContext()->getSettingsRef().show_table_uuid_in_table_create_query_if_not_nil)
+    /// disable uuid in show create query
     {
         auto & create = create_query->as<ASTCreateQuery &>();
         create.uuid = UUIDHelpers::Nil;

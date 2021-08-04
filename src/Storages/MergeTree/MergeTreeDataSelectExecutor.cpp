@@ -8,7 +8,6 @@
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeIndexReader.h>
 #include <Storages/MergeTree/KeyCondition.h>
-#include <Storages/MergeTree/MergeTreeDataPartUUID.h>
 #include <Storages/ReadInOrderOptimizer.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
@@ -375,7 +374,6 @@ MergeTreeDataSelectSamplingData MergeTreeDataSelectExecutor::getSampling(
     NamesAndTypesList available_real_columns,
     const MergeTreeData::DataPartsVector & parts,
     KeyCondition & key_condition,
-    const MergeTreeData & data,
     const StorageMetadataPtr & metadata_snapshot,
     ContextPtr context,
     bool sample_factor_column_queried,
@@ -452,33 +450,9 @@ MergeTreeDataSelectSamplingData MergeTreeDataSelectExecutor::getSampling(
         * [----------------****]
         *                  ^ - offset
         *                  <------> - size
-        *
-        * Next, if the `parallel_replicas_count`, `parallel_replica_offset` settings are set,
-        *  then it is necessary to break the received interval into pieces of the number `parallel_replicas_count`,
-        *  and select a piece with the number `parallel_replica_offset` (from zero).
-        *
-        * Example: SAMPLE 0.4 OFFSET 0.3, parallel_replicas_count = 2, parallel_replica_offset = 1
-        *
-        * [----------****------]
-        *        ^ - offset
-        *        <------> - size
-        *        <--><--> - pieces for different `parallel_replica_offset`, select the second one.
-        *
-        * It is very important that the intervals for different `parallel_replica_offset` cover the entire range without gaps and overlaps.
-        * It is also important that the entire universe can be covered using SAMPLE 0.1 OFFSET 0, ... OFFSET 0.9 and similar decimals.
         */
 
-    /// Parallel replicas has been requested but there is no way to sample data.
-    /// Select all data from first replica and no data from other replicas.
-    if (settings.parallel_replicas_count > 1 && !data.supportsSampling() && settings.parallel_replica_offset > 0)
-    {
-        LOG_DEBUG(log, "Will use no data on this replica because parallel replicas processing has been requested"
-            " (the setting 'max_parallel_replicas') but the table does not support sampling and this replica is not the first.");
-        sampling.read_nothing = true;
-        return sampling;
-    }
-
-    sampling.use_sampling = relative_sample_size > 0 || (settings.parallel_replicas_count > 1 && data.supportsSampling());
+    sampling.use_sampling = relative_sample_size > 0;
     bool no_data = false;   /// There is nothing left after sampling.
 
     if (sampling.use_sampling)
@@ -507,15 +481,6 @@ MergeTreeDataSelectSamplingData MergeTreeDataSelectExecutor::getSampling(
                 "Invalid sampling column type in storage parameters: " + sampling_column_type->getName()
                     + ". Must be one unsigned integer type",
                 ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER);
-
-        if (settings.parallel_replicas_count > 1)
-        {
-            if (relative_sample_size == RelativeSize(0))
-                relative_sample_size = 1;
-
-            relative_sample_size /= settings.parallel_replicas_count.value;
-            relative_sample_offset += relative_sample_size * RelativeSize(settings.parallel_replica_offset.value);
-        }
 
         if (relative_sample_offset >= RelativeSize(1))
             no_data = true;
@@ -701,27 +666,14 @@ void MergeTreeDataSelectExecutor::filterPartsByPartition(
 
     auto query_context = context->hasQueryContext() ? context->getQueryContext() : context;
     PartFilterCounters part_filter_counters;
-    if (query_context->getSettingsRef().allow_experimental_query_deduplication)
-        selectPartsToReadWithUUIDFilter(
-            parts,
-            part_values,
-            data.getPinnedPartUUIDs(),
-            minmax_idx_condition,
-            minmax_columns_types,
-            partition_pruner,
-            max_block_numbers_to_read,
-            query_context,
-            part_filter_counters,
-            log);
-    else
-        selectPartsToRead(
-            parts,
-            part_values,
-            minmax_idx_condition,
-            minmax_columns_types,
-            partition_pruner,
-            max_block_numbers_to_read,
-            part_filter_counters);
+    selectPartsToRead(
+        parts,
+        part_values,
+        minmax_idx_condition,
+        minmax_columns_types,
+        partition_pruner,
+        max_block_numbers_to_read,
+        part_filter_counters);
 
     index_stats.emplace_back(ReadFromMergeTree::IndexStat{
         .type = ReadFromMergeTree::IndexType::None,
@@ -1137,7 +1089,7 @@ size_t MergeTreeDataSelectExecutor::estimateNumMarksToRead(
 
     auto sampling = MergeTreeDataSelectExecutor::getSampling(
         select, metadata_snapshot->getColumns().getAllPhysical(), parts, key_condition,
-        data, metadata_snapshot, context, sample_factor_column_queried, log);
+        metadata_snapshot, context, sample_factor_column_queried, log);
 
     if (sampling.read_nothing)
         return 0;
@@ -1567,119 +1519,6 @@ void MergeTreeDataSelectExecutor::selectPartsToRead(
         counters.num_granules_after_partition_pruner += num_granules;
 
         parts.push_back(part_or_projection);
-    }
-}
-
-void MergeTreeDataSelectExecutor::selectPartsToReadWithUUIDFilter(
-    MergeTreeData::DataPartsVector & parts,
-    const std::optional<std::unordered_set<String>> & part_values,
-    MergeTreeData::PinnedPartUUIDsPtr pinned_part_uuids,
-    const std::optional<KeyCondition> & minmax_idx_condition,
-    const DataTypes & minmax_columns_types,
-    std::optional<PartitionPruner> & partition_pruner,
-    const PartitionIdToMaxBlock * max_block_numbers_to_read,
-    ContextPtr query_context,
-    PartFilterCounters & counters,
-    Poco::Logger * log)
-{
-    const Settings & settings = query_context->getSettings();
-
-    /// process_parts prepare parts that have to be read for the query,
-    /// returns false if duplicated parts' UUID have been met
-    auto select_parts = [&] (MergeTreeData::DataPartsVector & selected_parts) -> bool
-    {
-        auto ignored_part_uuids = query_context->getIgnoredPartUUIDs();
-        std::unordered_set<UUID> temp_part_uuids;
-
-        MergeTreeData::DataPartsVector prev_parts;
-        std::swap(prev_parts, selected_parts);
-        for (const auto & part_or_projection : prev_parts)
-        {
-            const auto * part = part_or_projection->isProjectionPart() ? part_or_projection->getParentPart() : part_or_projection.get();
-            if (part_values && part_values->find(part->name) == part_values->end())
-                continue;
-
-            if (part->isEmpty())
-                continue;
-
-            if (max_block_numbers_to_read)
-            {
-                auto blocks_iterator = max_block_numbers_to_read->find(part->info.partition_id);
-                if (blocks_iterator == max_block_numbers_to_read->end() || part->info.max_block > blocks_iterator->second)
-                    continue;
-            }
-
-            /// Skip the part if its uuid is meant to be excluded
-            if (part->uuid != UUIDHelpers::Nil && ignored_part_uuids->has(part->uuid))
-                continue;
-
-            size_t num_granules = part->getMarksCount();
-            if (num_granules && part->index_granularity.hasFinalMark())
-                --num_granules;
-
-            counters.num_initial_selected_parts += 1;
-            counters.num_initial_selected_granules += num_granules;
-
-            if (minmax_idx_condition
-                && !minmax_idx_condition->checkInHyperrectangle(part->minmax_idx.hyperrectangle, minmax_columns_types)
-                        .can_be_true)
-                continue;
-
-            counters.num_parts_after_minmax += 1;
-            counters.num_granules_after_minmax += num_granules;
-
-            if (partition_pruner)
-            {
-                if (partition_pruner->canBePruned(*part))
-                    continue;
-            }
-
-            counters.num_parts_after_partition_pruner += 1;
-            counters.num_granules_after_partition_pruner += num_granules;
-
-            /// populate UUIDs and exclude ignored parts if enabled
-            if (part->uuid != UUIDHelpers::Nil)
-            {
-                if (settings.experimental_query_deduplication_send_all_part_uuids || pinned_part_uuids->contains(part->uuid))
-                {
-                    auto result = temp_part_uuids.insert(part->uuid);
-                    if (!result.second)
-                        throw Exception("Found a part with the same UUID on the same replica.", ErrorCodes::LOGICAL_ERROR);
-                }
-            }
-
-            selected_parts.push_back(part_or_projection);
-        }
-
-        if (!temp_part_uuids.empty())
-        {
-            auto duplicates = query_context->getPartUUIDs()->add(std::vector<UUID>{temp_part_uuids.begin(), temp_part_uuids.end()});
-            if (!duplicates.empty())
-            {
-                /// on a local replica with prefer_localhost_replica=1 if any duplicates appeared during the first pass,
-                /// adding them to the exclusion, so they will be skipped on second pass
-                query_context->getIgnoredPartUUIDs()->add(duplicates);
-                return false;
-            }
-        }
-
-        return true;
-    };
-
-    /// Process parts that have to be read for a query.
-    auto needs_retry = !select_parts(parts);
-
-    /// If any duplicated part UUIDs met during the first step, try to ignore them in second pass.
-    /// This may happen when `prefer_localhost_replica` is set and "distributed" stage runs in the same process with "remote" stage.
-    if (needs_retry)
-    {
-        LOG_DEBUG(log, "Found duplicate uuids locally, will retry part selection without them");
-
-        counters = PartFilterCounters();
-
-        /// Second attempt didn't help, throw an exception
-        if (!select_parts(parts))
-            throw Exception("Found duplicate UUIDs while processing query.", ErrorCodes::DUPLICATED_PART_UUIDS);
     }
 }
 

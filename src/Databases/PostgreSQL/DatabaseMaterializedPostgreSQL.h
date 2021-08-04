@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Databases/DatabaseOrdinary.h"
 #if !defined(ARCADIA_BUILD)
 #include "config_core.h"
 #endif
@@ -14,7 +15,6 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Databases/IDatabase.h>
 #include <Databases/DatabaseOnDisk.h>
-#include <Databases/DatabaseAtomic.h>
 
 
 namespace DB
@@ -24,7 +24,7 @@ class PostgreSQLConnection;
 using PostgreSQLConnectionPtr = std::shared_ptr<PostgreSQLConnection>;
 
 
-class DatabaseMaterializedPostgreSQL : public DatabaseAtomic
+class DatabaseMaterializedPostgreSQL : public DatabaseOrdinary
 {
 
 public:

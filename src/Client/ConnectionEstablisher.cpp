@@ -66,26 +66,7 @@ void ConnectionEstablisher::run(ConnectionEstablisher::TryResult & result, std::
         }
 
         result.is_usable = true;
-
-        UInt64 max_allowed_delay = settings ? UInt64(settings->max_replica_delay_for_distributed_queries) : 0;
-        if (!max_allowed_delay)
-        {
-            result.is_up_to_date = true;
-            return;
-        }
-
-        UInt32 delay = table_status_it->second.absolute_delay;
-
-        if (delay < max_allowed_delay)
-            result.is_up_to_date = true;
-        else
-        {
-            result.is_up_to_date = false;
-            result.staleness = delay;
-
-            LOG_TRACE(log, "Server {} has unacceptable replica delay for table {}.{}: {}", result.entry->getDescription(), table_to_check->database, table_to_check->table, delay);
-            ProfileEvents::increment(ProfileEvents::DistributedConnectionStaleReplica);
-        }
+        result.is_up_to_date = true;
     }
     catch (const Exception & e)
     {

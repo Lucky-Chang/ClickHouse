@@ -13,7 +13,6 @@
 #include <Common/setThreadName.h>
 #include <Common/ThreadPool.h>
 #include <Common/checkStackSize.h>
-#include <Storages/MergeTree/ReplicatedMergeTreeBlockOutputStream.h>
 #include <Storages/StorageValues.h>
 #include <Storages/LiveView/StorageLiveView.h>
 #include <Storages/StorageMaterializedView.h>
@@ -44,12 +43,6 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
     addTableLock(
         storage->lockForShare(getContext()->getInitialQueryId(), getContext()->getSettingsRef().lock_acquire_timeout));
 
-    /// If the "root" table deduplicates blocks, there are no need to make deduplication for children
-    /// Moreover, deduplication for AggregatingMergeTree children could produce false positives due to low size of inserting blocks
-    bool disable_deduplication_for_children = false;
-    if (!getContext()->getSettingsRef().deduplicate_blocks_in_dependent_materialized_views)
-        disable_deduplication_for_children = !no_destination && storage->supportsDeduplication();
-
     auto table_id = storage->getStorageID();
     Dependencies dependencies = DatabaseCatalog::instance().getDependencies(table_id);
 
@@ -60,10 +53,6 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
         insert_context = Context::createCopy(context);
 
         const auto & insert_settings = insert_context->getSettingsRef();
-
-        // Do not deduplicate insertions into MV if the main insertion is Ok
-        if (disable_deduplication_for_children)
-            insert_context->setSetting("insert_deduplicate", Field{false});
 
         // Separate min_insert_block_size_rows/min_insert_block_size_bytes for children
         if (insert_settings.min_insert_block_size_rows_for_materialized_views)
@@ -126,10 +115,7 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
 
     /// Do not push to destination table if the flag is set
     if (!no_destination)
-    {
         output = storage->write(query_ptr, storage->getInMemoryMetadataPtr(), getContext());
-        replicated_output = dynamic_cast<ReplicatedMergeTreeBlockOutputStream *>(output.get());
-    }
 }
 
 
@@ -164,10 +150,6 @@ void PushingToViewsBlockOutputStream::write(const Block & block)
             ///       with additional columns directly from storage and pass it to MVs instead of raw block.
             output->write(block);
     }
-
-    /// Don't process materialized views if this block is duplicate
-    if (!getContext()->getSettingsRef().deduplicate_blocks_in_dependent_materialized_views && replicated_output && replicated_output->lastBlockIsDuplicate())
-        return;
 
     // Insert data into materialized views only after successful insert into main table
     const Settings & settings = getContext()->getSettingsRef();

@@ -47,7 +47,6 @@
 #include <DataTypes/DataTypeNullable.h>
 
 #include <Databases/DatabaseFactory.h>
-#include <Databases/DatabaseReplicated.h>
 #include <Databases/IDatabase.h>
 #include <Databases/DatabaseOnDisk.h>
 
@@ -209,12 +208,6 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
     {
         throw Exception("MaterializeMySQL is an experimental database engine. "
                         "Enable allow_experimental_database_materialize_mysql to use it.", ErrorCodes::UNKNOWN_DATABASE_ENGINE);
-    }
-
-    if (create.storage->engine->name == "Replicated" && !getContext()->getSettingsRef().allow_experimental_database_replicated && !internal)
-    {
-        throw Exception("Replicated is an experimental database engine. "
-                        "Enable allow_experimental_database_replicated to use it.", ErrorCodes::UNKNOWN_DATABASE_ENGINE);
     }
 
     if (create.storage->engine->name == "MaterializedPostgreSQL" && !getContext()->getSettingsRef().allow_experimental_database_materialized_postgresql && !internal)
@@ -849,20 +842,6 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     if (create.attach && !create.storage && !create.columns_list)
     {
         auto database = DatabaseCatalog::instance().getDatabase(database_name);
-
-        if (database->getEngineName() == "Replicated")
-        {
-            auto guard = DatabaseCatalog::instance().getDDLGuard(database_name, create.table);
-
-            if (auto* ptr = typeid_cast<DatabaseReplicated *>(database.get());
-                ptr && getContext()->getClientInfo().query_kind != ClientInfo::QueryKind::SECONDARY_QUERY)
-            {
-                create.database = database_name;
-                guard->releaseTableLock();
-                return ptr->tryEnqueueReplicatedDDL(query_ptr, getContext());
-            }
-        }
-
         bool if_not_exists = create.if_not_exists;
 
         // Table SQL definition is available even if the table is detached (even permanently)
@@ -943,19 +922,6 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     bool need_add_to_database = !create.temporary;
     if (need_add_to_database)
         database = DatabaseCatalog::instance().getDatabase(database_name);
-
-    if (need_add_to_database && database->getEngineName() == "Replicated")
-    {
-        auto guard = DatabaseCatalog::instance().getDDLGuard(create.database, create.table);
-
-        if (auto * ptr = typeid_cast<DatabaseReplicated *>(database.get());
-            ptr && getContext()->getClientInfo().query_kind != ClientInfo::QueryKind::SECONDARY_QUERY)
-        {
-            assertOrSetUUID(create, database);
-            guard->releaseTableLock();
-            return ptr->tryEnqueueReplicatedDDL(query_ptr, getContext());
-        }
-    }
 
     if (create.replace_table)
         return doCreateOrReplaceTable(create, properties);
@@ -1041,19 +1007,6 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         /// We will try to create Storage instance with provided data path
         data_path = *create.attach_from_path;
         create.attach_from_path = std::nullopt;
-    }
-
-    if (create.attach)
-    {
-        /// If table was detached it's not possible to attach it back while some threads are using
-        /// old instance of the storage. For example, AsynchronousMetrics may cause ATTACH to fail,
-        /// so we allow waiting here. If database_atomic_wait_for_drop_and_detach_synchronously is disabled
-        /// and old storage instance still exists it will throw exception.
-        bool throw_if_table_in_use = getContext()->getSettingsRef().database_atomic_wait_for_drop_and_detach_synchronously;
-        if (throw_if_table_in_use)
-            database->checkDetachedTableNotInUse(create.uuid);
-        else
-            database->waitDetachedTableNotInUse(create.uuid);
     }
 
     StoragePtr res;
@@ -1175,7 +1128,7 @@ BlockIO InterpreterCreateQuery::fillTableIfNeeded(const ASTCreateQuery & create)
     return {};
 }
 
-void InterpreterCreateQuery::prepareOnClusterQuery(ASTCreateQuery & create, ContextPtr local_context, const String & cluster_name)
+void InterpreterCreateQuery::prepareOnClusterQuery(ASTCreateQuery & create, ContextPtr /*local_context*/, const String & /*cluster_name*/)
 {
     if (create.attach)
         return;
@@ -1183,43 +1136,6 @@ void InterpreterCreateQuery::prepareOnClusterQuery(ASTCreateQuery & create, Cont
     /// For CREATE query generate UUID on initiator, so it will be the same on all hosts.
     /// It will be ignored if database does not support UUIDs.
     generateUUIDForTable(create);
-
-    /// For cross-replication cluster we cannot use UUID in replica path.
-    String cluster_name_expanded = local_context->getMacros()->expand(cluster_name);
-    ClusterPtr cluster = local_context->getCluster(cluster_name_expanded);
-
-    if (cluster->maybeCrossReplication())
-    {
-        /// Check that {uuid} macro is not used in zookeeper_path for ReplicatedMergeTree.
-        /// Otherwise replicas will generate different paths.
-        if (!create.storage)
-            return;
-        if (!create.storage->engine)
-            return;
-        if (!startsWith(create.storage->engine->name, "Replicated"))
-            return;
-
-        bool has_explicit_zk_path_arg = create.storage->engine->arguments &&
-                                        create.storage->engine->arguments->children.size() >= 2 &&
-                                        create.storage->engine->arguments->children[0]->as<ASTLiteral>() &&
-                                        create.storage->engine->arguments->children[0]->as<ASTLiteral>()->value.getType() == Field::Types::String;
-
-        if (has_explicit_zk_path_arg)
-        {
-            String zk_path = create.storage->engine->arguments->children[0]->as<ASTLiteral>()->value.get<String>();
-            Macros::MacroExpansionInfo info;
-            info.table_id.uuid = create.uuid;
-            info.ignore_unknown = true;
-            local_context->getMacros()->expand(zk_path, info);
-            if (!info.expanded_uuid)
-                return;
-        }
-
-        throw Exception("Seems like cluster is configured for cross-replication, "
-                        "but zookeeper_path for ReplicatedMergeTree is not specified or contains {uuid} macro. "
-                        "It's not supported for cross replication, because tables must have different UUIDs. "
-                        "Please specify unique zookeeper_path explicitly.", ErrorCodes::INCORRECT_QUERY);
-    }
 }
 
 BlockIO InterpreterCreateQuery::execute()

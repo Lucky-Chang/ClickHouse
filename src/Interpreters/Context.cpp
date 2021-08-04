@@ -23,7 +23,6 @@
 #include <Storages/IStorage.h>
 #include <Storages/MarkCache.h>
 #include <Storages/MergeTree/MergeList.h>
-#include <Storages/MergeTree/ReplicatedFetchList.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/CompressionCodecSelector.h>
@@ -56,8 +55,6 @@
 #include <Interpreters/InterserverIOHandler.h>
 #include <Interpreters/SystemLog.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/DDLWorker.h>
-#include <Interpreters/DDLTask.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/UncompressedCache.h>
 #include <IO/MMappedFileCache.h>
@@ -75,7 +72,6 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
 #include <Storages/MergeTree/BackgroundJobsExecutor.h>
-#include <Storages/MergeTree/MergeTreeDataPartUUID.h>
 #include <filesystem>
 
 
@@ -322,9 +318,6 @@ struct ContextSharedPart
     mutable std::mutex keeper_storage_dispatcher_mutex;
     mutable std::shared_ptr<KeeperStorageDispatcher> keeper_storage_dispatcher;
 #endif
-    mutable std::mutex auxiliary_zookeepers_mutex;
-    mutable std::map<String, zkutil::ZooKeeperPtr> auxiliary_zookeepers;    /// Map for auxiliary ZooKeeper clients.
-    ConfigurationPtr auxiliary_zookeepers_config;           /// Stores auxiliary zookeepers configs
 
     String interserver_io_host;                             /// The host name by which this server is available for other servers.
     UInt16 interserver_io_port = 0;                         /// and port.
@@ -356,21 +349,16 @@ struct ContextSharedPart
     mutable MarkCachePtr mark_cache;                        /// Cache of marks in compressed files.
     mutable MMappedFileCachePtr mmap_cache; /// Cache of mmapped files to avoid frequent open/map/unmap/close and to reuse from several threads.
     ProcessList process_list;                               /// Executing queries at the moment.
-    MergeList merge_list;                                   /// The list of executable merge (for (Replicated)?MergeTree)
-    ReplicatedFetchList replicated_fetch_list;
+    MergeList merge_list;                                   /// The list of executable merge (for MergeTree)
     ConfigurationPtr users_config;                          /// Config with the users, profiles and quotas sections.
     InterserverIOHandler interserver_io_handler;            /// Handler for interserver communication.
 
     mutable std::optional<BackgroundSchedulePool> buffer_flush_schedule_pool; /// A thread pool that can do background flush for Buffer tables.
-    mutable std::optional<BackgroundSchedulePool> schedule_pool;    /// A thread pool that can run different jobs in background (used in replicated tables)
+    mutable std::optional<BackgroundSchedulePool> schedule_pool;    /// A thread pool that can run different jobs in background (used in merge tables)
     mutable std::optional<BackgroundSchedulePool> distributed_schedule_pool; /// A thread pool that can run different jobs in background (used for distributed sends)
     mutable std::optional<BackgroundSchedulePool> message_broker_schedule_pool; /// A thread pool that can run different jobs in background (used for message brokers, like RabbitMQ and Kafka)
 
-    mutable ThrottlerPtr replicated_fetches_throttler; /// A server-wide throttler for replicated fetches
-    mutable ThrottlerPtr replicated_sends_throttler; /// A server-wide throttler for replicated sends
-
     MultiVersion<Macros> macros;                            /// Substitutions extracted from config.
-    std::unique_ptr<DDLWorker> ddl_worker;                  /// Process ddl commands from zk.
     /// Rules for selecting the compression settings, depending on the size of the part.
     mutable std::unique_ptr<CompressionCodecSelector> compression_codec_selector;
     /// Storage disk chooser for MergeTree engines
@@ -379,7 +367,6 @@ struct ContextSharedPart
     mutable std::shared_ptr<const StoragePolicySelector> merge_tree_storage_policy_selector;
 
     std::optional<MergeTreeSettings> merge_tree_settings;   /// Settings of MergeTree* engines.
-    std::optional<MergeTreeSettings> replicated_merge_tree_settings;   /// Settings of ReplicatedMergeTree* engines.
     std::atomic_size_t max_table_size_to_drop = 50000000000lu; /// Protects MergeTree tables from accidental DROP (50GB by default)
     std::atomic_size_t max_partition_size_to_drop = 50000000000lu; /// Protects MergeTree partitions from accidental DROP (50GB by default)
     String format_schema_path;                              /// Path to a directory that contains schema files used by input formats.
@@ -488,7 +475,6 @@ struct ContextSharedPart
             schedule_pool.reset();
             distributed_schedule_pool.reset();
             message_broker_schedule_pool.reset();
-            ddl_worker.reset();
 
             /// Stop trace collector if any
             trace_collector.reset();
@@ -571,7 +557,6 @@ void Context::copyFrom(const ContextPtr & other)
 
 Context::~Context() = default;
 
-
 InterserverIOHandler & Context::getInterserverIOHandler() { return shared->interserver_io_handler; }
 
 std::unique_lock<std::recursive_mutex> Context::getLock() const
@@ -585,9 +570,6 @@ ProcessList & Context::getProcessList() { return shared->process_list; }
 const ProcessList & Context::getProcessList() const { return shared->process_list; }
 MergeList & Context::getMergeList() { return shared->merge_list; }
 const MergeList & Context::getMergeList() const { return shared->merge_list; }
-ReplicatedFetchList & Context::getReplicatedFetchList() { return shared->replicated_fetch_list; }
-const ReplicatedFetchList & Context::getReplicatedFetchList() const { return shared->replicated_fetch_list; }
-
 
 void Context::enableNamedSessions()
 {
@@ -1638,55 +1620,6 @@ BackgroundSchedulePool & Context::getMessageBrokerSchedulePool() const
     return *shared->message_broker_schedule_pool;
 }
 
-ThrottlerPtr Context::getReplicatedFetchesThrottler() const
-{
-    auto lock = getLock();
-    if (!shared->replicated_fetches_throttler)
-        shared->replicated_fetches_throttler = std::make_shared<Throttler>(
-            settings.max_replicated_fetches_network_bandwidth_for_server);
-
-    return shared->replicated_fetches_throttler;
-}
-
-ThrottlerPtr Context::getReplicatedSendsThrottler() const
-{
-    auto lock = getLock();
-    if (!shared->replicated_sends_throttler)
-        shared->replicated_sends_throttler = std::make_shared<Throttler>(
-            settings.max_replicated_sends_network_bandwidth_for_server);
-
-    return shared->replicated_sends_throttler;
-}
-
-bool Context::hasDistributedDDL() const
-{
-    return getConfigRef().has("distributed_ddl");
-}
-
-void Context::setDDLWorker(std::unique_ptr<DDLWorker> ddl_worker)
-{
-    auto lock = getLock();
-    if (shared->ddl_worker)
-        throw Exception("DDL background thread has already been initialized", ErrorCodes::LOGICAL_ERROR);
-    ddl_worker->startup();
-    shared->ddl_worker = std::move(ddl_worker);
-}
-
-DDLWorker & Context::getDDLWorker() const
-{
-    auto lock = getLock();
-    if (!shared->ddl_worker)
-    {
-        if (!hasZooKeeper())
-            throw Exception("There is no Zookeeper configuration in server config", ErrorCodes::NO_ELEMENTS_IN_CONFIG);
-
-        if (!hasDistributedDDL())
-            throw Exception("There is no DistributedDDL configuration in server config", ErrorCodes::NO_ELEMENTS_IN_CONFIG);
-
-        throw Exception("DDL background thread is not initialized", ErrorCodes::NO_ELEMENTS_IN_CONFIG);
-    }
-    return *shared->ddl_worker;
-}
 
 zkutil::ZooKeeperPtr Context::getZooKeeper() const
 {
@@ -1742,31 +1675,6 @@ void Context::shutdownKeeperStorageDispatcher() const
 #endif
 }
 
-
-zkutil::ZooKeeperPtr Context::getAuxiliaryZooKeeper(const String & name) const
-{
-    std::lock_guard lock(shared->auxiliary_zookeepers_mutex);
-
-    auto zookeeper = shared->auxiliary_zookeepers.find(name);
-    if (zookeeper == shared->auxiliary_zookeepers.end())
-    {
-        const auto & config = shared->auxiliary_zookeepers_config ? *shared->auxiliary_zookeepers_config : getConfigRef();
-        if (!config.has("auxiliary_zookeepers." + name))
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Unknown auxiliary ZooKeeper name '{}'. If it's required it can be added to the section <auxiliary_zookeepers> in "
-                "config.xml",
-                name);
-
-        zookeeper
-            = shared->auxiliary_zookeepers.emplace(name, std::make_shared<zkutil::ZooKeeper>(config, "auxiliary_zookeepers." + name)).first;
-    }
-    else if (zookeeper->second->expired())
-        zookeeper->second = zookeeper->second->startNewSession();
-
-    return zookeeper->second;
-}
-
 void Context::resetZooKeeper() const
 {
     std::lock_guard lock(shared->zookeeper_mutex);
@@ -1791,33 +1699,9 @@ void Context::reloadZooKeeperIfChanged(const ConfigurationPtr & config) const
     reloadZooKeeperIfChangedImpl(config, "zookeeper", shared->zookeeper);
 }
 
-void Context::reloadAuxiliaryZooKeepersConfigIfChanged(const ConfigurationPtr & config)
-{
-    std::lock_guard lock(shared->auxiliary_zookeepers_mutex);
-
-    shared->auxiliary_zookeepers_config = config;
-
-    for (auto it = shared->auxiliary_zookeepers.begin(); it != shared->auxiliary_zookeepers.end();)
-    {
-        if (!config->has("auxiliary_zookeepers." + it->first))
-            it = shared->auxiliary_zookeepers.erase(it);
-        else
-        {
-            reloadZooKeeperIfChangedImpl(config, "auxiliary_zookeepers." + it->first, it->second);
-            ++it;
-        }
-    }
-}
-
-
 bool Context::hasZooKeeper() const
 {
     return getConfigRef().has("zookeeper");
-}
-
-bool Context::hasAuxiliaryZooKeeper(const String & name) const
-{
-    return getConfigRef().has("auxiliary_zookeepers." + name);
 }
 
 InterserverCredentialsPtr Context::getInterserverCredentials()
@@ -1887,10 +1771,6 @@ std::optional<UInt16> Context::getTCPPortSecure() const
 std::shared_ptr<Cluster> Context::getCluster(const std::string & cluster_name) const
 {
     auto res = getClusters()->getCluster(cluster_name);
-    if (res)
-        return res;
-
-    res = tryGetReplicatedDatabaseCluster(cluster_name);
     if (res)
         return res;
 
@@ -2205,22 +2085,6 @@ const MergeTreeSettings & Context::getMergeTreeSettings() const
     }
 
     return *shared->merge_tree_settings;
-}
-
-const MergeTreeSettings & Context::getReplicatedMergeTreeSettings() const
-{
-    auto lock = getLock();
-
-    if (!shared->replicated_merge_tree_settings)
-    {
-        const auto & config = getConfigRef();
-        MergeTreeSettings mt_settings;
-        mt_settings.loadFromConfig("merge_tree", config);
-        mt_settings.loadFromConfig("replicated_merge_tree", config);
-        shared->replicated_merge_tree_settings.emplace(mt_settings);
-    }
-
-    return *shared->replicated_merge_tree_settings;
 }
 
 const StorageS3Settings & Context::getStorageS3Settings() const
@@ -2655,31 +2519,6 @@ StorageID Context::resolveStorageIDImpl(StorageID storage_id, StorageNamespace w
     return StorageID::createEmpty();
 }
 
-void Context::initZooKeeperMetadataTransaction(ZooKeeperMetadataTransactionPtr txn, [[maybe_unused]] bool attach_existing)
-{
-    assert(!metadata_transaction);
-    assert(attach_existing || query_context.lock().get() == this);
-    metadata_transaction = std::move(txn);
-}
-
-ZooKeeperMetadataTransactionPtr Context::getZooKeeperMetadataTransaction() const
-{
-    assert(!metadata_transaction || hasQueryContext());
-    return metadata_transaction;
-}
-
-PartUUIDsPtr Context::getPartUUIDs() const
-{
-    auto lock = getLock();
-    if (!part_uuids)
-        /// For context itself, only this initialization is not const.
-        /// We could have done in constructor.
-        /// TODO: probably, remove this from Context.
-        const_cast<PartUUIDsPtr &>(part_uuids) = std::make_shared<PartUUIDs>();
-
-    return part_uuids;
-}
-
 
 ReadTaskCallback Context::getReadTaskCallback() const
 {
@@ -2692,15 +2531,6 @@ ReadTaskCallback Context::getReadTaskCallback() const
 void Context::setReadTaskCallback(ReadTaskCallback && callback)
 {
     next_task_callback = callback;
-}
-
-PartUUIDsPtr Context::getIgnoredPartUUIDs() const
-{
-    auto lock = getLock();
-    if (!ignored_part_uuids)
-        const_cast<PartUUIDsPtr &>(ignored_part_uuids) = std::make_shared<PartUUIDs>();
-
-    return ignored_part_uuids;
 }
 
 }

@@ -33,7 +33,7 @@ void applyMetadataChangesToCreateQuery(const ASTPtr & query, const StorageInMemo
 class DatabaseOnDisk : public DatabaseWithOwnTablesBase
 {
 public:
-    DatabaseOnDisk(const String & name, const String & metadata_path_, const String & data_path_, const String & logger, ContextPtr context);
+    DatabaseOnDisk(const String & name, const String & metadata_path_, UUID uuid, const String & data_path_, const String & logger, ContextPtr context);
 
     void createTable(
         ContextPtr context,

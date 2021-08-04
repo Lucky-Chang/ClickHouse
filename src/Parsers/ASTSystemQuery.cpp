@@ -40,16 +40,6 @@ const char * ASTSystemQuery::typeToString(Type type)
             return "STOP LISTEN QUERIES";
         case Type::START_LISTEN_QUERIES:
             return "START LISTEN QUERIES";
-        case Type::RESTART_REPLICAS:
-            return "RESTART REPLICAS";
-        case Type::RESTART_REPLICA:
-            return "RESTART REPLICA";
-        case Type::RESTORE_REPLICA:
-            return "RESTORE REPLICA";
-        case Type::DROP_REPLICA:
-            return "DROP REPLICA";
-        case Type::SYNC_REPLICA:
-            return "SYNC REPLICA";
         case Type::FLUSH_DISTRIBUTED:
             return "FLUSH DISTRIBUTED";
         case Type::RELOAD_DICTIONARY:
@@ -78,18 +68,6 @@ const char * ASTSystemQuery::typeToString(Type type)
             return "STOP MOVES";
         case Type::START_MOVES:
             return "START MOVES";
-        case Type::STOP_FETCHES:
-            return "STOP FETCHES";
-        case Type::START_FETCHES:
-            return "START FETCHES";
-        case Type::STOP_REPLICATED_SENDS:
-            return "STOP REPLICATED SENDS";
-        case Type::START_REPLICATED_SENDS:
-            return "START REPLICATED SENDS";
-        case Type::STOP_REPLICATION_QUEUES:
-            return "STOP REPLICATION QUEUES";
-        case Type::START_REPLICATION_QUEUES:
-            return "START REPLICATION QUEUES";
         case Type::STOP_DISTRIBUTED_SENDS:
             return "STOP DISTRIBUTED SENDS";
         case Type::START_DISTRIBUTED_SENDS:
@@ -121,29 +99,6 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState &, 
                       << (settings.hilite ? hilite_none : "");
     };
 
-    auto print_drop_replica = [&]
-    {
-        settings.ostr << " " << quoteString(replica);
-        if (!table.empty())
-        {
-            settings.ostr << (settings.hilite ? hilite_keyword : "") << " FROM TABLE"
-                          << (settings.hilite ? hilite_none : "");
-            print_database_table();
-        }
-        else if (!replica_zk_path.empty())
-        {
-            settings.ostr << (settings.hilite ? hilite_keyword : "") << " FROM ZKPATH "
-                          << (settings.hilite ? hilite_none : "") << quoteString(replica_zk_path);
-        }
-        else if (!database.empty())
-        {
-            settings.ostr << (settings.hilite ? hilite_keyword : "") << " FROM DATABASE "
-                          << (settings.hilite ? hilite_none : "");
-            settings.ostr << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(database)
-                          << (settings.hilite ? hilite_none : "");
-        }
-    };
-
     auto print_on_volume = [&]
     {
         settings.ostr << (settings.hilite ? hilite_keyword : "") << " ON VOLUME "
@@ -163,12 +118,6 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState &, 
         || type == Type::START_TTL_MERGES
         || type == Type::STOP_MOVES
         || type == Type::START_MOVES
-        || type == Type::STOP_FETCHES
-        || type == Type::START_FETCHES
-        || type == Type::STOP_REPLICATED_SENDS
-        || type == Type::START_REPLICATED_SENDS
-        || type == Type::STOP_REPLICATION_QUEUES
-        || type == Type::START_REPLICATION_QUEUES
         || type == Type::STOP_DISTRIBUTED_SENDS
         || type == Type::START_DISTRIBUTED_SENDS)
     {
@@ -177,17 +126,10 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState &, 
         else if (!volume.empty())
             print_on_volume();
     }
-    else if (  type == Type::RESTART_REPLICA
-            || type == Type::RESTORE_REPLICA
-            || type == Type::SYNC_REPLICA
-            || type == Type::FLUSH_DISTRIBUTED
+    else if (  type == Type::FLUSH_DISTRIBUTED
             || type == Type::RELOAD_DICTIONARY)
     {
         print_database_table();
-    }
-    else if (type == Type::DROP_REPLICA)
-    {
-        print_drop_replica();
     }
     else if (type == Type::SUSPEND)
     {

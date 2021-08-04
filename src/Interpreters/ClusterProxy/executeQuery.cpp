@@ -116,7 +116,6 @@ void executeQuery(
 
     std::vector<QueryPlanPtr> plans;
     Pipes remote_pipes;
-    Pipes delayed_pipes;
 
     auto new_context = updateSettingsForCluster(*query_info.getCluster(), context, settings, log);
 
@@ -163,7 +162,7 @@ void executeQuery(
         stream_factory.createForShard(shard_info,
             query_ast_for_shard,
             new_context, throttler, query_info, plans,
-            remote_pipes, delayed_pipes, log);
+            remote_pipes, log);
     }
 
     if (!remote_pipes.empty())
@@ -171,15 +170,6 @@ void executeQuery(
         auto plan = std::make_unique<QueryPlan>();
         auto read_from_remote = std::make_unique<ReadFromPreparedSource>(Pipe::unitePipes(std::move(remote_pipes)));
         read_from_remote->setStepDescription("Read from remote replica");
-        plan->addStep(std::move(read_from_remote));
-        plans.emplace_back(std::move(plan));
-    }
-
-    if (!delayed_pipes.empty())
-    {
-        auto plan = std::make_unique<QueryPlan>();
-        auto read_from_remote = std::make_unique<ReadFromPreparedSource>(Pipe::unitePipes(std::move(delayed_pipes)));
-        read_from_remote->setStepDescription("Read from delayed local replica");
         plan->addStep(std::move(read_from_remote));
         plans.emplace_back(std::move(plan));
     }

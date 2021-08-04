@@ -16,7 +16,6 @@
 #include <Common/escapeForFileName.h>
 #include <common/logger_useful.h>
 #include <Databases/DatabaseOrdinary.h>
-#include <Databases/DatabaseAtomic.h>
 #include <Common/assert_cast.h>
 #include <filesystem>
 #include <Common/filesystemHelpers.h>
@@ -194,10 +193,11 @@ void applyMetadataChangesToCreateQuery(const ASTPtr & query, const StorageInMemo
 DatabaseOnDisk::DatabaseOnDisk(
     const String & name,
     const String & metadata_path_,
+    UUID uuid, 
     const String & data_path_,
     const String & logger,
     ContextPtr local_context)
-    : DatabaseWithOwnTablesBase(name, logger, local_context)
+    : DatabaseWithOwnTablesBase(name, uuid, logger, local_context)
     , metadata_path(metadata_path_)
     , data_path(data_path_)
 {
@@ -405,20 +405,6 @@ void DatabaseOnDisk::renameTable(
     if (dictionary)
         throw Exception("Dictionaries can be renamed only in Atomic databases", ErrorCodes::NOT_IMPLEMENTED);
 
-    bool from_ordinary_to_atomic = false;
-    bool from_atomic_to_ordinary = false;
-    if (typeid(*this) != typeid(to_database))
-    {
-        if (typeid_cast<DatabaseOrdinary *>(this) && typeid_cast<DatabaseAtomic *>(&to_database))
-            from_ordinary_to_atomic = true;
-        else if (typeid_cast<DatabaseAtomic *>(this) && typeid_cast<DatabaseOrdinary *>(&to_database))
-            from_atomic_to_ordinary = true;
-        else if (dynamic_cast<DatabaseAtomic *>(this) && typeid_cast<DatabaseOrdinary *>(&to_database) && getEngineName() == "Replicated")
-            from_atomic_to_ordinary = true;
-        else
-            throw Exception("Moving tables between databases of different engines is not supported", ErrorCodes::NOT_IMPLEMENTED);
-    }
-
     auto table_data_relative_path = getTableDataPath(table_name);
     TableExclusiveLockHolder table_lock;
     String table_metadata_path;
@@ -426,7 +412,6 @@ void DatabaseOnDisk::renameTable(
     /// DatabaseLazy::detachTable may return nullptr even if table exists, so we need tryGetTable for this case.
     StoragePtr table = tryGetTable(table_name, getContext());
     detachTable(table_name);
-    UUID prev_uuid = UUIDHelpers::Nil;
     try
     {
         table_lock = table->lockExclusively(
@@ -437,10 +422,6 @@ void DatabaseOnDisk::renameTable(
         auto & create = attach_query->as<ASTCreateQuery &>();
         create.database = to_database.getDatabaseName();
         create.table = to_table_name;
-        if (from_ordinary_to_atomic)
-            create.uuid = UUIDHelpers::generateV4();
-        if (from_atomic_to_ordinary)
-            std::swap(create.uuid, prev_uuid);
 
         if (auto * target_db = dynamic_cast<DatabaseOnDisk *>(&to_database))
             target_db->checkMetadataFilenameAvailability(to_table_name);
@@ -464,18 +445,6 @@ void DatabaseOnDisk::renameTable(
     to_database.createTable(local_context, to_table_name, table, attach_query);
 
     fs::remove(table_metadata_path);
-
-    if (from_atomic_to_ordinary)
-    {
-        auto & atomic_db = dynamic_cast<DatabaseAtomic &>(*this);
-        /// Special case: usually no actions with symlinks are required when detaching/attaching table,
-        /// but not when moving from Atomic database to Ordinary
-        if (table->storesDataOnDisk())
-            atomic_db.tryRemoveSymlink(table_name);
-        /// Forget about UUID, now it's possible to reuse it for new table
-        DatabaseCatalog::instance().removeUUIDMappingFinally(prev_uuid);
-        atomic_db.setDetachedTableNotInUseForce(prev_uuid);
-    }
 }
 
 

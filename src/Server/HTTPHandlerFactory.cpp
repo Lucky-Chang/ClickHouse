@@ -10,7 +10,6 @@
 #include "HTTPHandler.h"
 #include "NotFoundHandler.h"
 #include "StaticRequestHandler.h"
-#include "ReplicasStatusHandler.h"
 #include "InterserverIOHTTPHandler.h"
 #include "PrometheusRequestHandler.h"
 #include "WebUIRequestHandler.h"
@@ -163,11 +162,6 @@ void addCommonDefaultHandlersFactory(HTTPRequestHandlerFactoryMain & factory, IS
     ping_handler->attachStrictPath("/ping");
     ping_handler->allowGetAndHeadRequest();
     factory.addHandler(ping_handler);
-
-    auto replicas_status_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<ReplicasStatusHandler>>(server);
-    replicas_status_handler->attachNonStrictPath("/replicas_status");
-    replicas_status_handler->allowGetAndHeadRequest();
-    factory.addHandler(replicas_status_handler);
 
     auto web_ui_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<WebUIRequestHandler>>(server, "play.html");
     web_ui_handler->attachNonStrictPath("/play");

@@ -8,7 +8,6 @@
 
 #    include <Interpreters/Context.h>
 #    include <Databases/DatabaseOrdinary.h>
-#    include <Databases/DatabaseAtomic.h>
 #    include <Databases/MySQL/DatabaseMaterializeTablesIterator.h>
 #    include <Databases/MySQL/MaterializeMySQLSyncThread.h>
 #    include <Parsers/ASTCreateQuery.h>
@@ -33,7 +32,7 @@ DatabaseMaterializeMySQL<DatabaseOrdinary>::DatabaseMaterializeMySQL(
     ContextPtr context_,
     const String & database_name_,
     const String & metadata_path_,
-    UUID /*uuid*/,
+    UUID uuid,
     const String & mysql_database_name_,
     mysqlxx::Pool && pool_,
     MySQLClient && client_,
@@ -41,6 +40,7 @@ DatabaseMaterializeMySQL<DatabaseOrdinary>::DatabaseMaterializeMySQL(
     : DatabaseOrdinary(
         database_name_,
         metadata_path_,
+        uuid,
         "data/" + escapeForFileName(database_name_) + "/",
         "DatabaseMaterializeMySQL<Ordinary> (" + database_name_ + ")",
         context_)
@@ -49,21 +49,6 @@ DatabaseMaterializeMySQL<DatabaseOrdinary>::DatabaseMaterializeMySQL(
 {
 }
 
-template <>
-DatabaseMaterializeMySQL<DatabaseAtomic>::DatabaseMaterializeMySQL(
-    ContextPtr context_,
-    const String & database_name_,
-    const String & metadata_path_,
-    UUID uuid,
-    const String & mysql_database_name_,
-    mysqlxx::Pool && pool_,
-    MySQLClient && client_,
-    std::unique_ptr<MaterializeMySQLSettings> settings_)
-    : DatabaseAtomic(database_name_, metadata_path_, uuid, "DatabaseMaterializeMySQL<Atomic> (" + database_name_ + ")", context_)
-    , settings(std::move(settings_))
-    , materialize_thread(context_, database_name_, mysql_database_name_, std::move(pool_), std::move(client_), settings.get())
-{
-}
 
 template<typename Base>
 void DatabaseMaterializeMySQL<Base>::rethrowExceptionIfNeed() const
@@ -215,13 +200,9 @@ template<typename Database, template<class> class Helper, typename... Args>
 auto castToMaterializeMySQLAndCallHelper(Database * database, Args && ... args)
 {
     using Ordinary = DatabaseMaterializeMySQL<DatabaseOrdinary>;
-    using Atomic = DatabaseMaterializeMySQL<DatabaseAtomic>;
     using ToOrdinary = typename std::conditional_t<std::is_const_v<Database>, const Ordinary *, Ordinary *>;
-    using ToAtomic = typename std::conditional_t<std::is_const_v<Database>, const Atomic *, Atomic *>;
     if (auto * database_materialize = typeid_cast<ToOrdinary>(database))
         return (database_materialize->*Helper<Ordinary>::v)(std::forward<Args>(args)...);
-    if (auto * database_materialize = typeid_cast<ToAtomic>(database))
-        return (database_materialize->*Helper<Atomic>::v)(std::forward<Args>(args)...);
 
     throw Exception("LOGICAL_ERROR: cannot cast to DatabaseMaterializeMySQL, it is a bug.", ErrorCodes::LOGICAL_ERROR);
 }
@@ -245,7 +226,6 @@ void rethrowSyncExceptionIfNeed(const IDatabase * materialize_mysql_db)
 }
 
 template class DatabaseMaterializeMySQL<DatabaseOrdinary>;
-template class DatabaseMaterializeMySQL<DatabaseAtomic>;
 
 }
 

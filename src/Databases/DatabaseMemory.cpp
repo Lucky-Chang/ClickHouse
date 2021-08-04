@@ -16,8 +16,8 @@ namespace ErrorCodes
     extern const int UNKNOWN_TABLE;
 }
 
-DatabaseMemory::DatabaseMemory(const String & name_, ContextPtr context_)
-    : DatabaseWithOwnTablesBase(name_, "DatabaseMemory(" + name_ + ")", context_)
+DatabaseMemory::DatabaseMemory(const String & name_, UUID uuid, ContextPtr context_)
+    : DatabaseWithOwnTablesBase(name_, uuid, "DatabaseMemory(" + name_ + ")", context_)
     , data_path("data/" + escapeForFileName(database_name) + "/")
 {}
 

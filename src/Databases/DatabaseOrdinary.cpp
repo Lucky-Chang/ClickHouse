@@ -72,14 +72,19 @@ namespace
 }
 
 
-DatabaseOrdinary::DatabaseOrdinary(const String & name_, const String & metadata_path_, ContextPtr context_)
-    : DatabaseOrdinary(name_, metadata_path_, "data/" + escapeForFileName(name_) + "/", "DatabaseOrdinary (" + name_ + ")", context_)
+DatabaseOrdinary::DatabaseOrdinary(const String & name_, const String & metadata_path_, UUID uuid, ContextPtr context_)
+    : DatabaseOrdinary(name_, metadata_path_, uuid, "data/" + escapeForFileName(name_) + "/", "DatabaseOrdinary (" + name_ + ")", context_)
+{
+}
+
+DatabaseOrdinary::DatabaseOrdinary(const String & name_, const String & metadata_path_, UUID uuid, const String & logger, ContextPtr context_)
+    : DatabaseOrdinary(name_, metadata_path_, uuid, "data/" + escapeForFileName(name_) + "/", logger, context_)
 {
 }
 
 DatabaseOrdinary::DatabaseOrdinary(
-    const String & name_, const String & metadata_path_, const String & data_path_, const String & logger, ContextPtr context_)
-    : DatabaseOnDisk(name_, metadata_path_, data_path_, logger, context_)
+    const String & name_, const String & metadata_path_, UUID uuid, const String & data_path_, const String & logger, ContextPtr context_)
+    : DatabaseOnDisk(name_, metadata_path_, uuid, data_path_, logger, context_)
 {
 }
 

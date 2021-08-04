@@ -112,7 +112,7 @@ class IDatabase : public std::enable_shared_from_this<IDatabase>
 {
 public:
     IDatabase() = delete;
-    IDatabase(String database_name_) : database_name(std::move(database_name_)) {}
+    IDatabase(String database_name_, UUID uuid) : database_name(std::move(database_name_)), database_uuid(uuid) {}
 
     /// Get name of database engine.
     virtual String getEngineName() const = 0;
@@ -233,7 +233,7 @@ public:
         return database_name;
     }
     /// Get UUID of database.
-    virtual UUID getUUID() const { return UUIDHelpers::Nil; }
+    virtual UUID getUUID() const { return database_uuid; }
 
     virtual void renameDatabase(const String & /*new_name*/)
     {
@@ -257,9 +257,6 @@ public:
 
     virtual void assertCanBeDetached(bool /*cleanup*/) {}
 
-    virtual void waitDetachedTableNotInUse(const UUID & /*uuid*/) { }
-    virtual void checkDetachedTableNotInUse(const UUID & /*uuid*/) { }
-
     /// Ask all tables to complete the background threads they are using and delete all table objects.
     virtual void shutdown() = 0;
 
@@ -278,6 +275,7 @@ protected:
 
     mutable std::mutex mutex;
     String database_name;
+    UUID database_uuid;
 };
 
 using DatabasePtr = std::shared_ptr<IDatabase>;

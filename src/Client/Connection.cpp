@@ -544,14 +544,6 @@ void Connection::sendData(const Block & block, const String & name, bool scalar)
         throttler->add(out->count() - prev_bytes);
 }
 
-void Connection::sendIgnoredPartUUIDs(const std::vector<UUID> & uuids)
-{
-    writeVarUInt(Protocol::Client::IgnoredPartUUIDs, *out);
-    writeVectorBinary(uuids, *out);
-    out->next();
-}
-
-
 void Connection::sendReadTaskResponse(const String & response)
 {
     writeVarUInt(Protocol::Client::ReadTaskResponse, *out);
@@ -814,10 +806,6 @@ Packet Connection::receivePacket()
                 return res;
 
             case Protocol::Server::EndOfStream:
-                return res;
-
-            case Protocol::Server::PartUUIDs:
-                readVectorBinary(res.part_uuids, *in);
                 return res;
 
             case Protocol::Server::ReadTaskRequest:

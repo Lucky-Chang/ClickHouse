@@ -14,8 +14,6 @@
 #include <IO/ConnectionTimeoutsContext.h>
 #include <Common/FiberStack.h>
 #include <Client/MultiplexedConnections.h>
-#include <Client/HedgedConnections.h>
-#include <Storages/MergeTree/MergeTreeDataPartUUID.h>
 
 namespace DB
 {
@@ -66,17 +64,6 @@ RemoteQueryExecutor::RemoteQueryExecutor(
     {
         const Settings & current_settings = context->getSettingsRef();
         auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(current_settings);
-
-#if defined(OS_LINUX)
-        if (current_settings.use_hedged_requests)
-        {
-            std::shared_ptr<QualifiedTableName> table_to_check = nullptr;
-            if (main_table)
-                table_to_check = std::make_shared<QualifiedTableName>(main_table.getQualifiedName());
-
-            return std::make_unique<HedgedConnections>(pool, current_settings, timeouts, throttler, pool_mode, table_to_check);
-        }
-#endif
 
         std::vector<IConnectionPool::Entry> connection_entries;
         if (main_table)
@@ -185,12 +172,6 @@ void RemoteQueryExecutor::sendQuery()
         modified_client_info.client_trace_context = CurrentThread::get().thread_trace_context;
     }
 
-    {
-        std::lock_guard lock(duplicated_part_uuids_mutex);
-        if (!duplicated_part_uuids.empty())
-            connections->sendIgnoredPartUUIDs(duplicated_part_uuids);
-    }
-
     connections->sendQuery(timeouts, query, query_id, stage, modified_client_info, true);
 
     established = false;
@@ -220,8 +201,6 @@ Block RemoteQueryExecutor::read()
 
         if (auto block = processPacket(std::move(packet)))
             return *block;
-        else if (got_duplicated_part_uuids)
-            return std::get<Block>(restartQueryWithoutDuplicatedUUIDs());
     }
 }
 
@@ -260,8 +239,6 @@ std::variant<Block, int> RemoteQueryExecutor::read(std::unique_ptr<ReadContext> 
         {
             if (auto data = processPacket(std::move(read_context->packet)))
                 return std::move(*data);
-            else if (got_duplicated_part_uuids)
-                return restartQueryWithoutDuplicatedUUIDs(&read_context);
         }
     }
     while (true);
@@ -271,40 +248,12 @@ std::variant<Block, int> RemoteQueryExecutor::read(std::unique_ptr<ReadContext> 
 }
 
 
-std::variant<Block, int> RemoteQueryExecutor::restartQueryWithoutDuplicatedUUIDs(std::unique_ptr<ReadContext> * read_context)
-{
-    /// Cancel previous query and disconnect before retry.
-    cancel(read_context);
-    connections->disconnect();
-
-    /// Only resend once, otherwise throw an exception
-    if (!resent_query)
-    {
-        if (log)
-            LOG_DEBUG(log, "Found duplicate UUIDs, will retry query without those parts");
-
-        resent_query = true;
-        sent_query = false;
-        got_duplicated_part_uuids = false;
-        /// Consecutive read will implicitly send query first.
-        if (!read_context)
-            return read();
-        else
-            return read(*read_context);
-    }
-    throw Exception("Found duplicate uuids while processing query.", ErrorCodes::DUPLICATED_PART_UUIDS);
-}
-
 std::optional<Block> RemoteQueryExecutor::processPacket(Packet packet)
 {
     switch (packet.type)
     {
         case Protocol::Server::ReadTaskRequest:
             processReadTaskRequest();
-            break;
-        case Protocol::Server::PartUUIDs:
-            if (!setPartUUIDs(packet.part_uuids))
-                got_duplicated_part_uuids = true;
             break;
         case Protocol::Server::Data:
             /// If the block is not empty and is not a header block
@@ -364,20 +313,6 @@ std::optional<Block> RemoteQueryExecutor::processPacket(Packet packet)
     }
 
     return {};
-}
-
-bool RemoteQueryExecutor::setPartUUIDs(const std::vector<UUID> & uuids)
-{
-    auto query_context = context->getQueryContext();
-    auto duplicates = query_context->getPartUUIDs()->add(uuids);
-
-    if (!duplicates.empty())
-    {
-        std::lock_guard lock(duplicated_part_uuids_mutex);
-        duplicated_part_uuids.insert(duplicated_part_uuids.begin(), duplicates.begin(), duplicates.end());
-        return false;
-    }
-    return true;
 }
 
 void RemoteQueryExecutor::processReadTaskRequest()

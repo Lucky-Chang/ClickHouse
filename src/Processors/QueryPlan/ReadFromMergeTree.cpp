@@ -808,7 +808,7 @@ ReadFromMergeTree::AnalysisResult ReadFromMergeTree::selectRangesToRead(MergeTre
 
     result.sampling = MergeTreeDataSelectExecutor::getSampling(
         select, metadata_snapshot->getColumns().getAllPhysical(), parts, key_condition,
-        data, metadata_snapshot, context, sample_factor_column_queried, log);
+        metadata_snapshot, context, sample_factor_column_queried, log);
 
     if (result.sampling.read_nothing)
         return result;

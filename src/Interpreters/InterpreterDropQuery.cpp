@@ -10,7 +10,6 @@
 #include <Common/escapeForFileName.h>
 #include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
-#include <Databases/DatabaseReplicated.h>
 
 #if !defined(ARCADIA_BUILD)
 #    include "config_core.h"
@@ -54,9 +53,6 @@ BlockIO InterpreterDropQuery::execute()
     if (!drop.cluster.empty())
         return executeDDLQueryOnCluster(query_ptr, getContext(), getRequiredAccessForDDLOnCluster());
 
-    if (getContext()->getSettingsRef().database_atomic_wait_for_drop_and_detach_synchronously)
-        drop.no_delay = true;
-
     if (!drop.table.empty())
         return executeToTable(drop);
     else if (!drop.database.empty())
@@ -66,24 +62,11 @@ BlockIO InterpreterDropQuery::execute()
 }
 
 
-void InterpreterDropQuery::waitForTableToBeActuallyDroppedOrDetached(const ASTDropQuery & query, const DatabasePtr & db, const UUID & uuid_to_wait)
-{
-    if (uuid_to_wait == UUIDHelpers::Nil)
-        return;
-
-    if (query.kind == ASTDropQuery::Kind::Drop)
-        DatabaseCatalog::instance().waitTableFinallyDropped(uuid_to_wait);
-    else if (query.kind == ASTDropQuery::Kind::Detach)
-        db->waitDetachedTableNotInUse(uuid_to_wait);
-}
-
 BlockIO InterpreterDropQuery::executeToTable(ASTDropQuery & query)
 {
     DatabasePtr database;
     UUID table_to_wait_on = UUIDHelpers::Nil;
     auto res = executeToTableImpl(query, database, table_to_wait_on);
-    if (query.no_delay)
-        waitForTableToBeActuallyDroppedOrDetached(query, database, table_to_wait_on);
     return res;
 }
 
@@ -130,12 +113,6 @@ BlockIO InterpreterDropQuery::executeToTableImpl(ASTDropQuery & query, DatabaseP
         /// Now get UUID, so we can wait for table data to be finally dropped
         table_id.uuid = database->tryGetTableUUID(table_id.table_name);
 
-        /// Prevents recursive drop from drop database query. The original query must specify a table.
-        bool is_drop_or_detach_database = query_ptr->as<ASTDropQuery>()->table.empty();
-        bool is_replicated_ddl_query = typeid_cast<DatabaseReplicated *>(database.get()) &&
-                                       getContext()->getClientInfo().query_kind != ClientInfo::QueryKind::SECONDARY_QUERY &&
-                                       !is_drop_or_detach_database;
-
         AccessFlags drop_storage;
 
         if (table->isView())
@@ -144,20 +121,6 @@ BlockIO InterpreterDropQuery::executeToTableImpl(ASTDropQuery & query, DatabaseP
             drop_storage = AccessType::DROP_DICTIONARY;
         else
             drop_storage = AccessType::DROP_TABLE;
-
-        if (is_replicated_ddl_query)
-        {
-            if (query.kind == ASTDropQuery::Kind::Detach)
-                getContext()->checkAccess(drop_storage, table_id);
-            else if (query.kind == ASTDropQuery::Kind::Truncate)
-                getContext()->checkAccess(AccessType::TRUNCATE, table_id);
-            else if (query.kind == ASTDropQuery::Kind::Drop)
-                getContext()->checkAccess(drop_storage, table_id);
-
-            ddl_guard->releaseTableLock();
-            table.reset();
-            return typeid_cast<DatabaseReplicated *>(database.get())->tryEnqueueReplicatedDDL(query.clone(), getContext());
-        }
 
         if (query.kind == ASTDropQuery::Kind::Detach)
         {
@@ -318,8 +281,7 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
             if (database->getEngineName() == "MaterializeMySQL")
                 stopDatabaseSynchronization(database);
 #endif
-            if (auto * replicated = typeid_cast<DatabaseReplicated *>(database.get()))
-                replicated->stopReplication();
+
 #if USE_LIBPQXX
             if (auto * materialize_postgresql = typeid_cast<DatabaseMaterializedPostgreSQL *>(database.get()))
                 materialize_postgresql->stopReplication();
@@ -423,12 +385,7 @@ void InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind kind, ContextPtr 
         /// looks like expected behaviour and we have tests for it.
         auto drop_context = Context::createCopy(global_context);
         drop_context->getClientInfo().query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
-        if (auto txn = current_context->getZooKeeperMetadataTransaction())
-        {
-            /// For Replicated database
-            drop_context->setQueryContext(std::const_pointer_cast<Context>(current_context));
-            drop_context->initZooKeeperMetadataTransaction(txn, true);
-        }
+
         InterpreterDropQuery drop_interpreter(ast_drop_query, drop_context);
         drop_interpreter.execute();
     }

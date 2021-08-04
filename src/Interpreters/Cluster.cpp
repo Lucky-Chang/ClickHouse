@@ -667,21 +667,4 @@ const std::string & Cluster::ShardInfo::insertPathForInternalReplication(bool pr
     }
 }
 
-bool Cluster::maybeCrossReplication() const
-{
-    /// Cluster can be used for cross-replication if some replicas have different default database names,
-    /// so one clickhouse-server instance can contain multiple replicas.
-
-    if (addresses_with_failover.empty())
-        return false;
-
-    const String & database_name = addresses_with_failover.front().front().default_database;
-    for (const auto & shard : addresses_with_failover)
-        for (const auto & replica : shard)
-            if (replica.default_database != database_name)
-                return true;
-
-    return false;
-}
-
 }

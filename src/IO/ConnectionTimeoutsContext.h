@@ -22,9 +22,7 @@ inline ConnectionTimeouts ConnectionTimeouts::getTCPTimeoutsWithFailover(const S
         settings.receive_timeout,
         settings.tcp_keep_alive_timeout,
         0,
-        settings.connect_timeout_with_failover_secure_ms,
-        settings.hedged_connection_timeout_ms,
-        settings.receive_data_timeout_ms);
+        settings.connect_timeout_with_failover_secure_ms);
 }
 
 inline ConnectionTimeouts ConnectionTimeouts::getHTTPTimeouts(ContextPtr context)

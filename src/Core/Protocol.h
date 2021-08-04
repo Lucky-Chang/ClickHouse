@@ -75,8 +75,7 @@ namespace Protocol
             TablesStatusResponse = 9, /// A response to TablesStatus request.
             Log = 10,                 /// System logs of the query execution
             TableColumns = 11,        /// Columns' description for default values calculation
-            PartUUIDs = 12,           /// List of unique parts ids.
-            ReadTaskRequest = 13,     /// String (UUID) describes a request for which next task is needed
+            ReadTaskRequest = 12,     /// String (UUID) describes a request for which next task is needed
                                       /// This is such an inverted logic, where server sends requests
                                       /// And client returns back response
             MAX = ReadTaskRequest,
@@ -101,7 +100,6 @@ namespace Protocol
                 "TablesStatusResponse",
                 "Log",
                 "TableColumns",
-                "PartUUIDs",
                 "ReadTaskRequest"
             };
             return packet <= MAX
@@ -137,8 +135,7 @@ namespace Protocol
             TablesStatusRequest = 5, /// Check status of tables on the server.
             KeepAlive = 6,           /// Keep the connection alive
             Scalar = 7,              /// A block of data (compressed or not).
-            IgnoredPartUUIDs = 8,    /// List of unique parts ids to exclude from query processing
-            ReadTaskResponse = 9,     /// TODO:
+            ReadTaskResponse = 8,     /// TODO:
 
             MAX = ReadTaskResponse,
         };
@@ -154,7 +151,6 @@ namespace Protocol
                 "TablesStatusRequest",
                 "KeepAlive",
                 "Scalar",
-                "IgnoredPartUUIDs",
                 "ReadTaskResponse",
             };
             return packet <= MAX

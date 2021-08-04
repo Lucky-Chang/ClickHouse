@@ -119,19 +119,7 @@ void MultiplexedConnections::sendQuery(
         }
     }
 
-    size_t num_replicas = replica_states.size();
-    if (num_replicas > 1)
-    {
-        /// Use multiple replicas for parallel query processing.
-        modified_settings.parallel_replicas_count = num_replicas;
-        for (size_t i = 0; i < num_replicas; ++i)
-        {
-            modified_settings.parallel_replica_offset = i;
-            replica_states[i].connection->sendQuery(timeouts, query, query_id,
-                stage, &modified_settings, &client_info, with_pending_data);
-        }
-    }
-    else
+    /// TODO@json.lrj need check
     {
         /// Use single replica.
         replica_states[0].connection->sendQuery(timeouts, query, query_id,
@@ -139,21 +127,6 @@ void MultiplexedConnections::sendQuery(
     }
 
     sent_query = true;
-}
-
-void MultiplexedConnections::sendIgnoredPartUUIDs(const std::vector<UUID> & uuids)
-{
-    std::lock_guard lock(cancel_mutex);
-
-    if (sent_query)
-        throw Exception("Cannot send uuids after query is sent.", ErrorCodes::LOGICAL_ERROR);
-
-    for (ReplicaState & state : replica_states)
-    {
-        Connection * connection = state.connection;
-        if (connection != nullptr)
-            connection->sendIgnoredPartUUIDs(uuids);
-    }
 }
 
 
@@ -221,7 +194,6 @@ Packet MultiplexedConnections::drain()
         switch (packet.type)
         {
             case Protocol::Server::ReadTaskRequest:
-            case Protocol::Server::PartUUIDs:
             case Protocol::Server::Data:
             case Protocol::Server::Progress:
             case Protocol::Server::ProfileInfo:
@@ -300,7 +272,6 @@ Packet MultiplexedConnections::receivePacketUnlocked(AsyncCallback async_callbac
     switch (packet.type)
     {
         case Protocol::Server::ReadTaskRequest:
-        case Protocol::Server::PartUUIDs:
         case Protocol::Server::Data:
         case Protocol::Server::Progress:
         case Protocol::Server::ProfileInfo:

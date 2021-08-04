@@ -121,19 +121,6 @@ private:
         const PartitionIdToMaxBlock * max_block_numbers_to_read,
         PartFilterCounters & counters);
 
-    /// Same as previous but also skip parts uuids if any to the query context, or skip parts which uuids marked as excluded.
-    static void selectPartsToReadWithUUIDFilter(
-        MergeTreeData::DataPartsVector & parts,
-        const std::optional<std::unordered_set<String>> & part_values,
-        MergeTreeData::PinnedPartUUIDsPtr pinned_part_uuids,
-        const std::optional<KeyCondition> & minmax_idx_condition,
-        const DataTypes & minmax_columns_types,
-        std::optional<PartitionPruner> & partition_pruner,
-        const PartitionIdToMaxBlock * max_block_numbers_to_read,
-        ContextPtr query_context,
-        PartFilterCounters & counters,
-        Poco::Logger * log);
-
 public:
     /// For given number rows and bytes, get the number of marks to read.
     /// It is a minimal number of marks which contain so many rows and bytes.
@@ -194,7 +181,6 @@ public:
         NamesAndTypesList available_real_columns,
         const MergeTreeData::DataPartsVector & parts,
         KeyCondition & key_condition,
-        const MergeTreeData & data,
         const StorageMetadataPtr & metadata_snapshot,
         ContextPtr context,
         bool sample_factor_column_queried,

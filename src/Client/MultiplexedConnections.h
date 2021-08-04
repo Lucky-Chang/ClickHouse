@@ -47,9 +47,6 @@ public:
 
     void sendCancel() override;
 
-    /// Send parts' uuids to replicas to exclude them from query processing
-    void sendIgnoredPartUUIDs(const std::vector<UUID> & uuids) override;
-
     Packet drain() override;
 
     std::string dumpAddresses() const override;

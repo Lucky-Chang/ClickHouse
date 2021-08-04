@@ -41,6 +41,7 @@ public:
     DatabaseMySQL(
         ContextPtr context,
         const String & database_name,
+        UUID uuid_,
         const String & metadata_path,
         const ASTStorage * database_engine_define,
         const String & database_name_in_mysql,

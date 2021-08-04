@@ -45,12 +45,6 @@ void applySettingsQuirks(Settings & settings, Poco::Logger * log)
             if (log)
                 LOG_WARNING(log, "async_socket_for_remote has been disabled (you can explicitly enable it still)");
         }
-        if (!settings.use_hedged_requests.changed && settings.use_hedged_requests)
-        {
-            settings.use_hedged_requests = false;
-            if (log)
-                LOG_WARNING(log, "use_hedged_requests has been disabled (you can explicitly enable it still)");
-        }
     }
 }
 

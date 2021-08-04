@@ -10,12 +10,9 @@ namespace DB
 namespace ActionLocks
 {
     extern const StorageActionBlockType PartsMerge = 1;
-    extern const StorageActionBlockType PartsFetch = 2;
-    extern const StorageActionBlockType PartsSend = 3;
-    extern const StorageActionBlockType ReplicationQueue = 4;
-    extern const StorageActionBlockType DistributedSend = 5;
-    extern const StorageActionBlockType PartsTTLMerge = 6;
-    extern const StorageActionBlockType PartsMove = 7;
+    extern const StorageActionBlockType DistributedSend = 2;
+    extern const StorageActionBlockType PartsTTLMerge = 3;
+    extern const StorageActionBlockType PartsMove = 4;
 }
 
 

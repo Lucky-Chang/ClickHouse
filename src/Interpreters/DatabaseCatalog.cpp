@@ -18,6 +18,7 @@
 #include <Poco/Util/AbstractConfiguration.h>
 #include <filesystem>
 #include <Common/filesystemHelpers.h>
+#include "Core/UUID.h"
 
 #if !defined(ARCADIA_BUILD)
 #    include "config_core.h"
@@ -140,7 +141,7 @@ void DatabaseCatalog::initializeAndLoadTemporaryDatabase()
 {
     drop_delay_sec = getContext()->getConfigRef().getInt("database_atomic_delay_before_drop_table_sec", default_drop_delay_sec);
 
-    auto db_for_temporary_and_external_tables = std::make_shared<DatabaseMemory>(TEMPORARY_DATABASE, getContext());
+    auto db_for_temporary_and_external_tables = std::make_shared<DatabaseMemory>(TEMPORARY_DATABASE, UUIDHelpers::generateV4(), getContext());
     attachDatabase(TEMPORARY_DATABASE, db_for_temporary_and_external_tables);
 }
 
@@ -678,13 +679,6 @@ DatabaseAndTable DatabaseCatalog::tryGetDatabaseAndTable(const StorageID & table
 
 void DatabaseCatalog::loadMarkedAsDroppedTables()
 {
-    /// /clickhouse_root/metadata_dropped/ contains files with metadata of tables,
-    /// which where marked as dropped by Atomic databases.
-    /// Data directories of such tables still exists in store/
-    /// and metadata still exists in ZooKeeper for ReplicatedMergeTree tables.
-    /// If server restarts before such tables was completely dropped,
-    /// we should load them and enqueue cleanup to remove data from store/ and metadata from ZooKeeper
-
     std::map<String, StorageID> dropped_metadata;
     String path = getContext()->getPath() + "metadata_dropped/";
 

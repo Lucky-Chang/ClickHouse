@@ -23,8 +23,6 @@
 #include <Interpreters/TablesStatus.h>
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
-#include <Storages/StorageReplicatedMergeTree.h>
-#include <Storages/MergeTree/MergeTreeDataPartUUID.h>
 #include <Storages/StorageS3Cluster.h>
 #include <Core/ExternalTable.h>
 #include <Storages/ColumnDefault.h>
@@ -223,11 +221,6 @@ void TCPHandler::runImpl()
                 poll_interval = settings.poll_interval;
             }
 
-            /** If part_uuids got received in previous packet, trying to read again.
-              */
-            if (state.empty() && state.part_uuids && !receivePacket())
-                continue;
-
             query_scope.emplace(query_context);
 
             send_exception_with_stack_trace = query_context->getSettingsRef().calculate_text_stack_trace;
@@ -310,8 +303,6 @@ void TCPHandler::runImpl()
             bool may_have_embedded_data = client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_CLIENT_SUPPORT_EMBEDDED_DATA;
             /// Processing Query
             state.io = executeQuery(state.query, query_context, false, state.stage, may_have_embedded_data);
-
-            unknown_packet_in_send_data = query_context->getSettingsRef().unknown_packet_in_send_data;
 
             after_check_cancelled.restart();
             after_send_progress.restart();
@@ -588,10 +579,6 @@ void TCPHandler::processOrdinaryQuery()
     /// Pull query execution result, if exists, and send it to network.
     if (state.io.in)
     {
-
-        if (query_context->getSettingsRef().allow_experimental_query_deduplication)
-            sendPartUUIDs();
-
         /// This allows the client to prepare output format
         if (Block header = state.io.in->getHeader())
             sendData(header);
@@ -655,9 +642,6 @@ void TCPHandler::processOrdinaryQuery()
 void TCPHandler::processOrdinaryQueryWithProcessors()
 {
     auto & pipeline = state.io.pipeline;
-
-    if (query_context->getSettingsRef().allow_experimental_query_deduplication)
-        sendPartUUIDs();
 
     /// Send header-block, to allow client to prepare output format for data to send.
     {
@@ -739,29 +723,13 @@ void TCPHandler::processTablesStatusRequest()
             continue;
 
         TableStatus status;
-        if (auto * replicated_table = dynamic_cast<StorageReplicatedMergeTree *>(table.get()))
-        {
-            status.is_replicated = true;
-            status.absolute_delay = replicated_table->getAbsoluteDelay();
-        }
-        else
-            status.is_replicated = false; //-V1048
+        status.is_replicated = false; //-V1048
 
         response.table_states_by_id.emplace(table_name, std::move(status));
     }
 
 
     writeVarUInt(Protocol::Server::TablesStatusResponse, *out);
-
-    /// For testing hedged requests
-    const Settings & settings = query_context->getSettingsRef();
-    if (settings.sleep_in_send_tables_status_ms.totalMilliseconds())
-    {
-        out->next();
-        std::chrono::milliseconds ms(settings.sleep_in_send_tables_status_ms.totalMilliseconds());
-        std::this_thread::sleep_for(ms);
-    }
-
     response.write(*out, client_tcp_protocol_version);
 }
 
@@ -771,20 +739,6 @@ void TCPHandler::receiveUnexpectedTablesStatusRequest()
     skip_request.read(*in, client_tcp_protocol_version);
 
     throw NetException("Unexpected packet TablesStatusRequest received from client", ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT);
-}
-
-void TCPHandler::sendPartUUIDs()
-{
-    auto uuids = query_context->getPartUUIDs()->get();
-    if (!uuids.empty())
-    {
-        for (const auto & uuid : uuids)
-            LOG_TRACE(log, "Sending UUID: {}", toString(uuid));
-
-        writeVarUInt(Protocol::Server::PartUUIDs, *out);
-        writeVectorBinary(uuids, *out);
-        out->next();
-    }
 }
 
 
@@ -1004,10 +958,6 @@ bool TCPHandler::receivePacket()
 
     switch (packet_type)
     {
-        case Protocol::Client::IgnoredPartUUIDs:
-            /// Part uuids packet if any comes before query.
-            receiveIgnoredPartUUIDs();
-            return true;
         case Protocol::Client::Query:
             if (!state.empty())
                 receiveUnexpectedQuery();
@@ -1041,16 +991,6 @@ bool TCPHandler::receivePacket()
         default:
             throw Exception("Unknown packet " + toString(packet_type) + " from client", ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT);
     }
-}
-
-void TCPHandler::receiveIgnoredPartUUIDs()
-{
-    state.part_uuids = true;
-    std::vector<UUID> uuids;
-    readVectorBinary(uuids, *in);
-
-    if (!uuids.empty())
-        query_context->getIgnoredPartUUIDs()->add(uuids);
 }
 
 
@@ -1481,26 +1421,9 @@ void TCPHandler::sendData(const Block & block)
 
     try
     {
-        /// For testing hedged requests
-        if (unknown_packet_in_send_data)
-        {
-            --unknown_packet_in_send_data;
-            if (unknown_packet_in_send_data == 0)
-                writeVarUInt(UInt64(-1), *out);
-        }
-
         writeVarUInt(Protocol::Server::Data, *out);
         /// Send external table name (empty name is the main table)
         writeStringBinary("", *out);
-
-        /// For testing hedged requests
-        const Settings & settings = query_context->getSettingsRef();
-        if (block.rows() > 0 && settings.sleep_in_send_data_ms.totalMilliseconds())
-        {
-            out->next();
-            std::chrono::milliseconds ms(settings.sleep_in_send_data_ms.totalMilliseconds());
-            std::this_thread::sleep_for(ms);
-        }
 
         state.block_out->write(block);
         state.maybe_compressed_out->next();

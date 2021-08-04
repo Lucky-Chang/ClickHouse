@@ -68,9 +68,6 @@ struct QueryState
     /// Temporary tables read
     bool temporary_tables_read = false;
 
-    /// A state got uuids to exclude from a query
-    bool part_uuids = false;
-
     /// Request requires data from client for function input()
     bool need_receive_data_for_input = false;
     /// temporary place for incoming data block for input()
@@ -135,8 +132,6 @@ private:
     ContextMutablePtr connection_context;
     ContextMutablePtr query_context;
 
-    size_t unknown_packet_in_send_data = 0;
-
     /// Streams for reading/writing from/to client connection socket.
     std::shared_ptr<ReadBuffer> in;
     std::shared_ptr<WriteBuffer> out;
@@ -171,7 +166,6 @@ private:
     void receiveHello();
     bool receivePacket();
     void receiveQuery();
-    void receiveIgnoredPartUUIDs();
     String receiveReadTaskResponseAssumeLocked();
     bool receiveData(bool scalar);
     bool readDataNext(size_t poll_interval, time_t receive_timeout);
@@ -202,7 +196,6 @@ private:
     void sendProgress();
     void sendLogs();
     void sendEndOfStream();
-    void sendPartUUIDs();
     void sendReadTaskRequestAssumeLocked();
     void sendProfileInfo(const BlockStreamProfileInfo & info);
     void sendTotals(const Block & totals);

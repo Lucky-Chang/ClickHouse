@@ -1488,7 +1488,7 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
         ExpressionActionsChain chain(context);
         Names additional_required_columns_after_prewhere;
 
-        if (storage && (query.sampleSize() || settings.parallel_replicas_count > 1))
+        if (storage && query.sampleSize())
         {
             Names columns_for_sampling = metadata_snapshot->getColumnsRequiredForSampling();
             additional_required_columns_after_prewhere.insert(additional_required_columns_after_prewhere.end(),

@@ -2037,9 +2037,6 @@ private:
 
         switch (packet.type)
         {
-            case Protocol::Server::PartUUIDs:
-                return true;
-
             case Protocol::Server::Data:
                 if (!cancelled)
                     onData(packet.block);

@@ -39,10 +39,11 @@ DatabasePostgreSQL::DatabasePostgreSQL(
         const String & metadata_path_,
         const ASTStorage * database_engine_define_,
         const String & dbname_,
+        UUID uuid_,
         const String & postgres_dbname,
         postgres::PoolWithFailoverPtr pool_,
         bool cache_tables_)
-    : IDatabase(dbname_)
+    : IDatabase(dbname_, uuid_)
     , WithContext(context_->getGlobalContext())
     , metadata_path(metadata_path_)
     , database_engine_define(database_engine_define_->clone())
