@@ -47,9 +47,6 @@ public:
     /// in the server query_log. Must be called before sending the query to the server.
     void setQueryId(const std::string & query_id) { query_executor.setQueryId(query_id); }
 
-    /// Specify how we allocate connections on a shard.
-    void setPoolMode(PoolMode pool_mode) { query_executor.setPoolMode(pool_mode); }
-
     void setMainTable(StorageID main_table_) { query_executor.setMainTable(std::move(main_table_)); }
 
     /// Sends query (initiates calculation) before read()

@@ -5,7 +5,6 @@
 namespace ProfileEvents
 {
     extern const Event DistributedConnectionMissingTable;
-    extern const Event DistributedConnectionStaleReplica;
 }
 
 namespace DB
@@ -45,7 +44,6 @@ void ConnectionEstablisher::run(ConnectionEstablisher::TryResult & result, std::
         {
             result.entry->forceConnected(*timeouts);
             result.is_usable = true;
-            result.is_up_to_date = true;
             return;
         }
 
@@ -64,9 +62,7 @@ void ConnectionEstablisher::run(ConnectionEstablisher::TryResult & result, std::
             ProfileEvents::increment(ProfileEvents::DistributedConnectionMissingTable);
             return;
         }
-
-        result.is_usable = true;
-        result.is_up_to_date = true;
+        result.is_usable = !table_status_it->second.is_stale;
     }
     catch (const Exception & e)
     {

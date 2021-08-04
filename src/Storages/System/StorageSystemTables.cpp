@@ -359,12 +359,8 @@ protected:
                 {
                     ASTPtr ast = database->tryGetCreateTableQuery(table_name, context);
 
-                    if (ast && !context->getSettingsRef().show_table_uuid_in_table_create_query_if_not_nil)
-                    {
-                        auto & create = ast->as<ASTCreateQuery &>();
-                        create.uuid = UUIDHelpers::Nil;
-                        create.to_inner_uuid = UUIDHelpers::Nil;
-                    }
+                    ast->as<ASTCreateQuery &>().uuid = UUIDHelpers::Nil;
+                    ast->as<ASTCreateQuery &>().to_inner_uuid = UUIDHelpers::Nil;
 
                     if (columns_mask[src_index++])
                         res_columns[res_index++]->insert(ast ? queryToString(ast) : "");
@@ -439,7 +435,7 @@ protected:
                 }
 
                 auto settings = context->getSettingsRef();
-                settings.select_sequential_consistency = 0;
+                
                 if (columns_mask[src_index++])
                 {
                     auto total_rows = table ? table->totalRows(settings) : std::nullopt;

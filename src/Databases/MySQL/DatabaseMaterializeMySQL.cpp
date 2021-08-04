@@ -27,20 +27,19 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-template <>
-DatabaseMaterializeMySQL<DatabaseOrdinary>::DatabaseMaterializeMySQL(
+DatabaseMaterializeMySQL::DatabaseMaterializeMySQL(
     ContextPtr context_,
     const String & database_name_,
-    const String & metadata_path_,
     UUID uuid,
+    const String & metadata_path_,
     const String & mysql_database_name_,
     mysqlxx::Pool && pool_,
     MySQLClient && client_,
     std::unique_ptr<MaterializeMySQLSettings> settings_)
     : DatabaseOrdinary(
         database_name_,
-        metadata_path_,
         uuid,
+        metadata_path_,
         "data/" + escapeForFileName(database_name_) + "/",
         "DatabaseMaterializeMySQL<Ordinary> (" + database_name_ + ")",
         context_)
@@ -50,10 +49,9 @@ DatabaseMaterializeMySQL<DatabaseOrdinary>::DatabaseMaterializeMySQL(
 }
 
 
-template<typename Base>
-void DatabaseMaterializeMySQL<Base>::rethrowExceptionIfNeed() const
+void DatabaseMaterializeMySQL::rethrowExceptionIfNeed() const
 {
-    std::unique_lock<std::mutex> lock(Base::mutex);
+    std::unique_lock<std::mutex> lock(DatabaseOrdinary::mutex);
 
     if (!settings->allows_query_when_mysql_lost && exception)
     {
@@ -71,17 +69,15 @@ void DatabaseMaterializeMySQL<Base>::rethrowExceptionIfNeed() const
     }
 }
 
-template<typename Base>
-void DatabaseMaterializeMySQL<Base>::setException(const std::exception_ptr & exception_)
+void DatabaseMaterializeMySQL::setException(const std::exception_ptr & exception_)
 {
-    std::unique_lock<std::mutex> lock(Base::mutex);
+    std::unique_lock<std::mutex> lock(DatabaseOrdinary::mutex);
     exception = exception_;
 }
 
-template<typename Base>
-void DatabaseMaterializeMySQL<Base>::loadStoredObjects(ContextMutablePtr context_, bool has_force_restore_data_flag, bool force_attach)
+void DatabaseMaterializeMySQL::loadStoredObjects(ContextMutablePtr context_, bool has_force_restore_data_flag, bool force_attach)
 {
-    Base::loadStoredObjects(context_, has_force_restore_data_flag, force_attach);
+    DatabaseOrdinary::loadStoredObjects(context_, has_force_restore_data_flag, force_attach);
     if (!force_attach)
         materialize_thread.assertMySQLAvailable();
 
@@ -89,36 +85,32 @@ void DatabaseMaterializeMySQL<Base>::loadStoredObjects(ContextMutablePtr context
     started_up = true;
 }
 
-template<typename Base>
-void DatabaseMaterializeMySQL<Base>::createTable(ContextPtr context_, const String & name, const StoragePtr & table, const ASTPtr & query)
+void DatabaseMaterializeMySQL::createTable(ContextPtr context_, const String & name, const StoragePtr & table, const ASTPtr & query)
 {
     assertCalledFromSyncThreadOrDrop("create table");
-    Base::createTable(context_, name, table, query);
+    DatabaseOrdinary::createTable(context_, name, table, query);
 }
 
-template<typename Base>
-void DatabaseMaterializeMySQL<Base>::dropTable(ContextPtr context_, const String & name, bool no_delay)
+void DatabaseMaterializeMySQL::dropTable(ContextPtr context_, const String & name, bool no_delay)
 {
     assertCalledFromSyncThreadOrDrop("drop table");
-    Base::dropTable(context_, name, no_delay);
+    DatabaseOrdinary::dropTable(context_, name, no_delay);
 }
 
-template<typename Base>
-void DatabaseMaterializeMySQL<Base>::attachTable(const String & name, const StoragePtr & table, const String & relative_table_path)
+void DatabaseMaterializeMySQL::attachTable(const String & name, const StoragePtr & table, const String & relative_table_path)
 {
     assertCalledFromSyncThreadOrDrop("attach table");
-    Base::attachTable(name, table, relative_table_path);
+    DatabaseOrdinary::attachTable(name, table, relative_table_path);
 }
 
-template<typename Base>
-StoragePtr DatabaseMaterializeMySQL<Base>::detachTable(const String & name)
+StoragePtr DatabaseMaterializeMySQL::detachTable(const String & name)
 {
     assertCalledFromSyncThreadOrDrop("detach table");
-    return Base::detachTable(name);
+    return DatabaseOrdinary::detachTable(name);
 }
 
-template<typename Base>
-void DatabaseMaterializeMySQL<Base>::renameTable(ContextPtr context_, const String & name, IDatabase & to_database, const String & to_name, bool exchange, bool dictionary)
+
+void DatabaseMaterializeMySQL::renameTable(ContextPtr context_, const String & name, IDatabase & to_database, const String & to_name, bool exchange, bool dictionary)
 {
     assertCalledFromSyncThreadOrDrop("rename table");
 
@@ -128,37 +120,37 @@ void DatabaseMaterializeMySQL<Base>::renameTable(ContextPtr context_, const Stri
     if (dictionary)
         throw Exception("MaterializeMySQL database not support rename dictionary.", ErrorCodes::NOT_IMPLEMENTED);
 
-    if (to_database.getDatabaseName() != Base::getDatabaseName())
+    if (to_database.getDatabaseName() != DatabaseOrdinary::getDatabaseName())
         throw Exception("Cannot rename with other database for MaterializeMySQL database.", ErrorCodes::NOT_IMPLEMENTED);
 
-    Base::renameTable(context_, name, *this, to_name, exchange, dictionary);
+    DatabaseOrdinary::renameTable(context_, name, *this, to_name, exchange, dictionary);
 }
 
-template<typename Base>
-void DatabaseMaterializeMySQL<Base>::alterTable(ContextPtr context_, const StorageID & table_id, const StorageInMemoryMetadata & metadata)
+
+void DatabaseMaterializeMySQL::alterTable(ContextPtr context_, const StorageID & table_id, const StorageInMemoryMetadata & metadata)
 {
     assertCalledFromSyncThreadOrDrop("alter table");
-    Base::alterTable(context_, table_id, metadata);
+    DatabaseOrdinary::alterTable(context_, table_id, metadata);
 }
 
-template<typename Base>
-void DatabaseMaterializeMySQL<Base>::drop(ContextPtr context_)
+
+void DatabaseMaterializeMySQL::drop(ContextPtr context_)
 {
     /// Remove metadata info
-    fs::path metadata(Base::getMetadataPath() + "/.metadata");
+    fs::path metadata(DatabaseOrdinary::getMetadataPath() + "/.metadata");
 
     if (fs::exists(metadata))
         fs::remove(metadata);
 
-    Base::drop(context_);
+    DatabaseOrdinary::drop(context_);
 }
 
-template<typename Base>
-StoragePtr DatabaseMaterializeMySQL<Base>::tryGetTable(const String & name, ContextPtr context_) const
+
+StoragePtr DatabaseMaterializeMySQL::tryGetTable(const String & name, ContextPtr context_) const
 {
     if (!MaterializeMySQLSyncThread::isMySQLSyncThread())
     {
-        StoragePtr nested_storage = Base::tryGetTable(name, context_);
+        StoragePtr nested_storage = DatabaseOrdinary::tryGetTable(name, context_);
 
         if (!nested_storage)
             return {};
@@ -166,31 +158,30 @@ StoragePtr DatabaseMaterializeMySQL<Base>::tryGetTable(const String & name, Cont
         return std::make_shared<StorageMaterializeMySQL>(std::move(nested_storage), this);
     }
 
-    return Base::tryGetTable(name, context_);
+    return DatabaseOrdinary::tryGetTable(name, context_);
 }
 
-template <typename Base>
 DatabaseTablesIteratorPtr
-DatabaseMaterializeMySQL<Base>::getTablesIterator(ContextPtr context_, const DatabaseOnDisk::FilterByNameFunction & filter_by_table_name)
+DatabaseMaterializeMySQL::getTablesIterator(ContextPtr context_, const DatabaseOnDisk::FilterByNameFunction & filter_by_table_name)
 {
     if (!MaterializeMySQLSyncThread::isMySQLSyncThread())
     {
-        DatabaseTablesIteratorPtr iterator = Base::getTablesIterator(context_, filter_by_table_name);
+        DatabaseTablesIteratorPtr iterator = DatabaseOrdinary::getTablesIterator(context_, filter_by_table_name);
         return std::make_unique<DatabaseMaterializeTablesIterator>(std::move(iterator), this);
     }
 
-    return Base::getTablesIterator(context_, filter_by_table_name);
+    return DatabaseOrdinary::getTablesIterator(context_, filter_by_table_name);
 }
 
-template<typename Base>
-void DatabaseMaterializeMySQL<Base>::assertCalledFromSyncThreadOrDrop(const char * method) const
+
+void DatabaseMaterializeMySQL::assertCalledFromSyncThreadOrDrop(const char * method) const
 {
     if (!MaterializeMySQLSyncThread::isMySQLSyncThread() && started_up)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "MaterializeMySQL database not support {}", method);
 }
 
-template<typename Base>
-void DatabaseMaterializeMySQL<Base>::shutdownSynchronizationThread()
+
+void DatabaseMaterializeMySQL::shutdownSynchronizationThread()
 {
     materialize_thread.stopSynchronization();
     started_up = false;
@@ -199,7 +190,7 @@ void DatabaseMaterializeMySQL<Base>::shutdownSynchronizationThread()
 template<typename Database, template<class> class Helper, typename... Args>
 auto castToMaterializeMySQLAndCallHelper(Database * database, Args && ... args)
 {
-    using Ordinary = DatabaseMaterializeMySQL<DatabaseOrdinary>;
+    using Ordinary = DatabaseMaterializeMySQL;
     using ToOrdinary = typename std::conditional_t<std::is_const_v<Database>, const Ordinary *, Ordinary *>;
     if (auto * database_materialize = typeid_cast<ToOrdinary>(database))
         return (database_materialize->*Helper<Ordinary>::v)(std::forward<Args>(args)...);
@@ -224,8 +215,6 @@ void rethrowSyncExceptionIfNeed(const IDatabase * materialize_mysql_db)
 {
     castToMaterializeMySQLAndCallHelper<const IDatabase, HelperRethrow>(materialize_mysql_db);
 }
-
-template class DatabaseMaterializeMySQL<DatabaseOrdinary>;
 
 }
 

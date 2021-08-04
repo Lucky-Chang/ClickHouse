@@ -51,8 +51,8 @@
 #include <Interpreters/InterserverCredentials.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
 #include <Access/AccessControlManager.h>
-#include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/System/attachSystemTables.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <Functions/registerFunctions.h>
 #include <TableFunctions/registerTableFunctions.h>
@@ -60,6 +60,7 @@
 #include <Storages/registerStorages.h>
 #include <Dictionaries/registerDictionaries.h>
 #include <Disks/registerDisks.h>
+#include <Disks/IVolume.h>
 #include <Common/Config/ConfigReloader.h>
 #include <Server/HTTPHandlerFactory.h>
 #include "MetricsTransmitter.h"
@@ -831,8 +832,6 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 /// because TestKeeper server is not started yet.
                 if (config->has("zookeeper"))
                     global_context->reloadZooKeeperIfChanged(config);
-
-                global_context->reloadAuxiliaryZooKeepersConfigIfChanged(config);
             }
 
             global_context->updateStorageConfiguration(*config);

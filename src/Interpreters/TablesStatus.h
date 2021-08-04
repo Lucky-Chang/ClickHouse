@@ -19,15 +19,13 @@ class WriteBuffer;
 
 /// The following are request-response messages for TablesStatus request of the client-server protocol.
 /// Client can ask for about a set of tables and the server will respond with the following information for each table:
-/// - Is the table Replicated?
-/// - If yes, replication delay for that table.
+/// - Is the table stale for query?
 ///
 /// For nonexistent tables there will be no TableStatus entry in the response.
 
 struct TableStatus
 {
-    bool is_replicated = false;
-    UInt32 absolute_delay = 0;
+    bool is_stale = false;
 
     void write(WriteBuffer & out) const;
     void read(ReadBuffer & in);

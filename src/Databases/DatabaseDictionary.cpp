@@ -79,7 +79,7 @@ StoragePtr DatabaseDictionary::tryGetTable(const String & table_name, ContextPtr
 
 DatabaseTablesIteratorPtr DatabaseDictionary::getTablesIterator(ContextPtr, const FilterByNameFunction & filter_by_table_name)
 {
-    return std::make_unique<DatabaseTablesSnapshotIterator>(listTables(filter_by_table_name), getDatabaseName());
+    return std::make_unique<DatabaseTablesSnapshotIterator>(listTables(filter_by_table_name), getDatabaseName(), getUUID());
 }
 
 bool DatabaseDictionary::empty() const

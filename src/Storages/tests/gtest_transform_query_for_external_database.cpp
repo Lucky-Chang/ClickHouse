@@ -77,7 +77,7 @@ private:
         : context(Context::createCopy(getContext().context))
     {
         tryRegisterFunctions();
-        DatabasePtr database = std::make_shared<DatabaseMemory>("test", context);
+        DatabasePtr database = std::make_shared<DatabaseMemory>("test", UUIDHelpers::generateV4(), context);
 
         for (const auto & tab : tables)
         {

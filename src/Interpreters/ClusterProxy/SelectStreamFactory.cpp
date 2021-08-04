@@ -23,7 +23,6 @@
 namespace ProfileEvents
 {
     extern const Event DistributedConnectionMissingTable;
-    extern const Event DistributedConnectionStaleReplica;
 }
 
 namespace DB
@@ -32,7 +31,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ALL_CONNECTION_TRIES_FAILED;
-    extern const int ALL_REPLICAS_ARE_STALE;
 }
 
 namespace ClusterProxy
@@ -241,7 +239,6 @@ void SelectStreamFactory::createForShard(
             shard_info.pool, modified_query, modified_header, context, throttler, scalars, external_tables, processed_stage);
         remote_query_executor->setLogger(log);
 
-        remote_query_executor->setPoolMode(PoolMode::GET_MANY);
         if (!table_func_ptr)
             remote_query_executor->setMainTable(main_table);
 

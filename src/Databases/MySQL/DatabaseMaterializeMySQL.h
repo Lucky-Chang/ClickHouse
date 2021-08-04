@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Databases/DatabaseOrdinary.h"
 #include "config_core.h"
 
 #if USE_MYSQL
@@ -17,13 +18,12 @@ namespace DB
  *
  *  All table structure and data will be written to the local file system
  */
-template<typename Base>
-class DatabaseMaterializeMySQL : public Base
+class DatabaseMaterializeMySQL : public DatabaseOrdinary
 {
 public:
 
     DatabaseMaterializeMySQL(
-        ContextPtr context, const String & database_name_, const String & metadata_path_, UUID uuid,
+        ContextPtr context, const String & database_name_, UUID uuid, const String & metadata_path_,
         const String & mysql_database_name_, mysqlxx::Pool && pool_,
         MySQLClient && client_, std::unique_ptr<MaterializeMySQLSettings> settings_);
 

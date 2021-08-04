@@ -72,19 +72,19 @@ namespace
 }
 
 
-DatabaseOrdinary::DatabaseOrdinary(const String & name_, const String & metadata_path_, UUID uuid, ContextPtr context_)
-    : DatabaseOrdinary(name_, metadata_path_, uuid, "data/" + escapeForFileName(name_) + "/", "DatabaseOrdinary (" + name_ + ")", context_)
+DatabaseOrdinary::DatabaseOrdinary(const String & name_, UUID uuid, const String & metadata_path_, ContextPtr context_)
+    : DatabaseOrdinary(name_, uuid, metadata_path_, "data/" + escapeForFileName(name_) + "/", "DatabaseOrdinary (" + name_ + ")", context_)
 {
 }
 
-DatabaseOrdinary::DatabaseOrdinary(const String & name_, const String & metadata_path_, UUID uuid, const String & logger, ContextPtr context_)
-    : DatabaseOrdinary(name_, metadata_path_, uuid, "data/" + escapeForFileName(name_) + "/", logger, context_)
+DatabaseOrdinary::DatabaseOrdinary(const String & name_, UUID uuid, const String & metadata_path_, const String & logger, ContextPtr context_)
+    : DatabaseOrdinary(name_, uuid, metadata_path_, "data/" + escapeForFileName(name_) + "/", logger, context_)
 {
 }
 
 DatabaseOrdinary::DatabaseOrdinary(
-    const String & name_, const String & metadata_path_, UUID uuid, const String & data_path_, const String & logger, ContextPtr context_)
-    : DatabaseOnDisk(name_, metadata_path_, uuid, data_path_, logger, context_)
+    const String & name_, UUID uuid, const String & metadata_path_, const String & data_path_, const String & logger, ContextPtr context_)
+    : DatabaseOnDisk(name_, uuid, metadata_path_, data_path_, logger, context_)
 {
 }
 
@@ -117,10 +117,6 @@ void DatabaseOrdinary::loadStoredObjects(ContextMutablePtr local_context, bool h
 
                 if (fs::exists(full_path.string() + detached_suffix))
                 {
-                    /// FIXME: even if we don't load the table we can still mark the uuid of it as taken.
-                    /// if (create_query->uuid != UUIDHelpers::Nil)
-                    ///     DatabaseCatalog::instance().addUUIDMapping(create_query->uuid);
-
                     const std::string table_name = file_name.substr(0, file_name.size() - 4);
                     LOG_DEBUG(log, "Skipping permanently detached table {}.", backQuote(table_name));
                     return;

@@ -150,20 +150,8 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         throw Exception(ErrorCodes::UNKNOWN_DATABASE_ENGINE, "Unknown database engine: {}", serializeAST(*create.storage));
     }
 
-    if (create.storage->engine->name == "Atomic" || create.storage->engine->name == "Replicated" || create.storage->engine->name == "MaterializedPostgreSQL")
-    {
-        if (create.attach && create.uuid == UUIDHelpers::Nil)
-            throw Exception(ErrorCodes::INCORRECT_QUERY, "UUID must be specified for ATTACH. "
-                            "If you want to attach existing database, use just ATTACH DATABASE {};", create.database);
-        else if (create.uuid == UUIDHelpers::Nil)
-            create.uuid = UUIDHelpers::generateV4();
 
-        metadata_path = metadata_path / "store" / DatabaseCatalog::getPathForUUID(create.uuid);
-
-        if (!create.attach && fs::exists(metadata_path))
-            throw Exception(ErrorCodes::DATABASE_ALREADY_EXISTS, "Metadata directory {} already exists", metadata_path.string());
-    }
-    else if (create.storage->engine->name == "MaterializeMySQL")
+    if (create.storage->engine->name == "MaterializeMySQL")
     {
         /// It creates nested database with Ordinary or Atomic engine depending on UUID in query and default engine setting.
         /// Do nothing if it's an internal ATTACH on server startup or short-syntax ATTACH query from user,
@@ -187,10 +175,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         }
 
         /// Set metadata path according to nested engine
-        if (create.uuid == UUIDHelpers::Nil)
-            metadata_path = metadata_path / "metadata" / database_name_escaped;
-        else
-            metadata_path = metadata_path / "store" / DatabaseCatalog::getPathForUUID(create.uuid);
+        metadata_path = metadata_path / "metadata" / database_name_escaped;
     }
     else
     {

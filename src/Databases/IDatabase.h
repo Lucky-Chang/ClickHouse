@@ -38,24 +38,27 @@ public:
     virtual void next() = 0;
     virtual bool isValid() const = 0;
 
+    /// table name
     virtual const String & name() const = 0;
+
+    /// table uuid
+    virtual UUID uuid() const { return UUIDHelpers::Nil; }
 
     /// This method can return nullptr if it's Lazy database
     /// (a database with support for lazy tables loading
     /// - it maintains a list of tables but tables are loaded lazily).
     virtual const StoragePtr & table() const = 0;
 
-    IDatabaseTablesIterator(const String & database_name_) : database_name(database_name_) { }
-    IDatabaseTablesIterator(String && database_name_) : database_name(std::move(database_name_)) { }
+    IDatabaseTablesIterator(const String & database_name_, UUID uuid_) : database_name(database_name_), database_uuid(uuid_) { }
+    IDatabaseTablesIterator(String && database_name_, UUID uuid_) : database_name(std::move(database_name_)), database_uuid(uuid_) { }
 
     virtual ~IDatabaseTablesIterator() = default;
-
-    virtual UUID uuid() const { return UUIDHelpers::Nil; }
 
     const String & databaseName() const { assert(!database_name.empty()); return database_name; }
 
 protected:
     const String database_name;
+    const UUID database_uuid;
 };
 
 /// Copies list of tables and iterates through such snapshot.
@@ -67,7 +70,7 @@ private:
 
 protected:
     DatabaseTablesSnapshotIterator(DatabaseTablesSnapshotIterator && other)
-    : IDatabaseTablesIterator(std::move(other.database_name))
+    : IDatabaseTablesIterator(std::move(other.database_name), other.database_uuid)
     {
         size_t idx = std::distance(other.tables.begin(), other.it);
         std::swap(tables, other.tables);
@@ -77,13 +80,13 @@ protected:
     }
 
 public:
-    DatabaseTablesSnapshotIterator(const Tables & tables_, const String & database_name_)
-    : IDatabaseTablesIterator(database_name_), tables(tables_), it(tables.begin())
+    DatabaseTablesSnapshotIterator(const Tables & tables_, const String & database_name_, UUID database_uuid_)
+    : IDatabaseTablesIterator(database_name_, database_uuid_), tables(tables_), it(tables.begin())
     {
     }
 
-    DatabaseTablesSnapshotIterator(Tables && tables_, String && database_name_)
-    : IDatabaseTablesIterator(std::move(database_name_)), tables(std::move(tables_)), it(tables.begin())
+    DatabaseTablesSnapshotIterator(Tables && tables_, String && database_name_, UUID database_uuid_)
+    : IDatabaseTablesIterator(std::move(database_name_), database_uuid_), tables(std::move(tables_)), it(tables.begin())
     {
     }
 
@@ -112,7 +115,11 @@ class IDatabase : public std::enable_shared_from_this<IDatabase>
 {
 public:
     IDatabase() = delete;
-    IDatabase(String database_name_, UUID uuid) : database_name(std::move(database_name_)), database_uuid(uuid) {}
+    IDatabase(String database_name_, UUID database_uuid_) : database_name(std::move(database_name_)), database_uuid(database_uuid_) 
+    {
+        /// all databases should have uuid
+        assert(database_uuid != UUIDHelpers::Nil);
+    }
 
     /// Get name of database engine.
     virtual String getEngineName() const = 0;
@@ -131,6 +138,7 @@ public:
     /// Get the table for work. Return nullptr if there is no table.
     virtual StoragePtr tryGetTable(const String & name, ContextPtr context) const = 0;
 
+    /// try Get table uuid. some external Databases may have no table uuid.
     virtual UUID tryGetTableUUID(const String & /*table_name*/) const { return UUIDHelpers::Nil; }
 
     using FilterByNameFunction = std::function<bool(const String &)>;
@@ -232,6 +240,7 @@ public:
         std::lock_guard lock{mutex};
         return database_name;
     }
+
     /// Get UUID of database.
     virtual UUID getUUID() const { return database_uuid; }
 

@@ -19,7 +19,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ALL_CONNECTION_TRIES_FAILED;
-    extern const int ALL_REPLICAS_ARE_STALE;
     extern const int LOGICAL_ERROR;
 }
 }
@@ -74,7 +73,6 @@ public:
         explicit TryResult(Entry entry_)
             : entry(std::move(entry_))
             , is_usable(true)
-            , is_up_to_date(true)
         {
         }
 
@@ -82,15 +80,11 @@ public:
         {
             entry = Entry();
             is_usable = false;
-            is_up_to_date = false;
-            staleness = 0.0;
         }
 
         Entry entry;
         bool is_usable = false; /// If false, the entry is unusable for current request
                                 /// (but may be usable for other requests, so error counts are not incremented)
-        bool is_up_to_date = false; /// If true, the entry is a connection to up-to-date replica.
-        double staleness = 0.0; /// Helps choosing the "least stale" option when all replicas are stale.
     };
 
     struct PoolState;
@@ -121,15 +115,13 @@ public:
     std::vector<TryResult> getMany(
             size_t min_entries, size_t max_entries, size_t max_tries,
             size_t max_ignored_errors,
-            bool fallback_to_stale_replicas,
             const TryGetEntryFunc & try_get_entry,
             const GetPriorityFunc & get_priority = GetPriorityFunc());
 
 protected:
 
     /// Returns a single connection.
-    Entry get(size_t max_ignored_errors, bool fallback_to_stale_replicas,
-        const TryGetEntryFunc & try_get_entry, const GetPriorityFunc & get_priority = GetPriorityFunc());
+    Entry get(size_t max_ignored_errors, const TryGetEntryFunc & try_get_entry, const GetPriorityFunc & get_priority = GetPriorityFunc());
 
     /// This function returns a copy of pool states to avoid race conditions when modifying shared pool states.
     PoolStates updatePoolStates(size_t max_ignored_errors);
@@ -202,12 +194,12 @@ inline void PoolWithFailoverBase<TNestedPool>::updateSharedErrorCounts(std::vect
 
 template <typename TNestedPool>
 typename TNestedPool::Entry
-PoolWithFailoverBase<TNestedPool>::get(size_t max_ignored_errors, bool fallback_to_stale_replicas,
+PoolWithFailoverBase<TNestedPool>::get(size_t max_ignored_errors,
     const TryGetEntryFunc & try_get_entry, const GetPriorityFunc & get_priority)
 {
     std::vector<TryResult> results = getMany(
         1 /* min entries */, 1 /* max entries */, 1 /* max tries */,
-        max_ignored_errors, fallback_to_stale_replicas,
+        max_ignored_errors,
         try_get_entry, get_priority);
     if (results.empty() || results[0].entry.isNull())
         throw DB::Exception(
@@ -221,7 +213,6 @@ std::vector<typename PoolWithFailoverBase<TNestedPool>::TryResult>
 PoolWithFailoverBase<TNestedPool>::getMany(
         size_t min_entries, size_t max_entries, size_t max_tries,
         size_t max_ignored_errors,
-        bool fallback_to_stale_replicas,
         const TryGetEntryFunc & try_get_entry,
         const GetPriorityFunc & get_priority)
 {
@@ -231,7 +222,6 @@ PoolWithFailoverBase<TNestedPool>::getMany(
     std::vector<TryResult> try_results(shuffled_pools.size());
     size_t entries_count = 0;
     size_t usable_count = 0;
-    size_t up_to_date_count = 0;
     size_t failed_pools_count = 0;
 
     /// At exit update shared error counts with error counts occurred during this call.
@@ -246,7 +236,7 @@ PoolWithFailoverBase<TNestedPool>::getMany(
     {
         for (size_t i = 0; i < shuffled_pools.size(); ++i)
         {
-            if (up_to_date_count >= max_entries /// Already enough good entries.
+            if (usable_count >= max_entries /// Already enough good entries.
                 || entries_count + failed_pools_count >= nested_pools.size()) /// No more good entries will be produced.
             {
                 finished = true;
@@ -270,8 +260,6 @@ PoolWithFailoverBase<TNestedPool>::getMany(
                 if (result.is_usable)
                 {
                     ++usable_count;
-                    if (result.is_up_to_date)
-                        ++up_to_date_count;
                 }
             }
             else
@@ -300,34 +288,6 @@ PoolWithFailoverBase<TNestedPool>::getMany(
                     try_results.begin(), try_results.end(),
                     [](const TryResult & r) { return r.entry.isNull() || !r.is_usable; }),
             try_results.end());
-
-    /// Sort so that preferred items are near the beginning.
-    std::stable_sort(
-            try_results.begin(), try_results.end(),
-            [](const TryResult & left, const TryResult & right)
-            {
-                return std::forward_as_tuple(!left.is_up_to_date, left.staleness)
-                    < std::forward_as_tuple(!right.is_up_to_date, right.staleness);
-            });
-
-    if (fallback_to_stale_replicas)
-    {
-        /// There is not enough up-to-date entries but we are allowed to return stale entries.
-        /// Gather all up-to-date ones and least-bad stale ones.
-
-        size_t size = std::min(try_results.size(), max_entries);
-        try_results.resize(size);
-    }
-    else if (up_to_date_count >= min_entries)
-    {
-        /// There is enough up-to-date entries.
-        try_results.resize(up_to_date_count);
-    }
-    else
-        throw DB::Exception(
-                "Could not find enough connections to up-to-date replicas. Got: " + std::to_string(up_to_date_count)
-                + ", needed: " + std::to_string(min_entries),
-                DB::ErrorCodes::ALL_REPLICAS_ARE_STALE);
 
     return try_results;
 }

@@ -82,7 +82,7 @@ IConnectionPool::Entry ConnectionPoolWithFailover::get(const ConnectionTimeouts 
     }
 
     UInt64 max_ignored_errors = settings ? settings->distributed_replica_max_ignored_errors.value : 0;
-    return Base::get(max_ignored_errors, true, try_get_entry, get_priority);
+    return Base::get(max_ignored_errors, try_get_entry, get_priority);
 }
 
 Int64 ConnectionPoolWithFailover::getPriority() const
@@ -223,7 +223,7 @@ std::vector<ConnectionPoolWithFailover::TryResult> ConnectionPoolWithFailover::g
     else if (pool_mode == PoolMode::GET_ONE)
         max_entries = 1;
     else if (pool_mode == PoolMode::GET_MANY)
-        max_entries = 2;
+        max_entries = 4;
     else
         throw DB::Exception("Unknown pool allocation mode", DB::ErrorCodes::LOGICAL_ERROR);
 
@@ -231,7 +231,7 @@ std::vector<ConnectionPoolWithFailover::TryResult> ConnectionPoolWithFailover::g
 
     UInt64 max_ignored_errors = settings ? settings->distributed_replica_max_ignored_errors.value : 0;
     return Base::getMany(min_entries, max_entries, max_tries,
-        max_ignored_errors, true,
+        max_ignored_errors,
         try_get_entry, get_priority);
 }
 

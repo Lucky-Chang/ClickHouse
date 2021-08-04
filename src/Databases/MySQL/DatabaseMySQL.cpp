@@ -94,7 +94,7 @@ DatabaseTablesIteratorPtr DatabaseMySQL::getTablesIterator(ContextPtr local_cont
         if (!remove_or_detach_tables.count(table_name) && (!filter_by_table_name || filter_by_table_name(table_name)))
             tables[table_name] = modify_time_and_storage.second;
 
-    return std::make_unique<DatabaseTablesSnapshotIterator>(tables, database_name);
+    return std::make_unique<DatabaseTablesSnapshotIterator>(tables, database_name, database_uuid);
 }
 
 bool DatabaseMySQL::isTableExist(const String & name, ContextPtr local_context) const

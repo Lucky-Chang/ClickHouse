@@ -723,7 +723,7 @@ void TCPHandler::processTablesStatusRequest()
             continue;
 
         TableStatus status;
-        status.is_replicated = false; //-V1048
+        status.is_stale = false; //-V1048
 
         response.table_states_by_id.emplace(table_name, std::move(status));
     }

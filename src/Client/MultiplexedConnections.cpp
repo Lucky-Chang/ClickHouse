@@ -11,7 +11,6 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int MISMATCH_REPLICAS_DATA_SOURCES;
-    extern const int NO_AVAILABLE_REPLICA;
     extern const int TIMEOUT_EXCEEDED;
     extern const int UNKNOWN_PACKET_FROM_SERVER;
 }
@@ -39,6 +38,9 @@ MultiplexedConnections::MultiplexedConnections(
     if (connections.empty())
         return;
 
+    if (connections.size() > 1)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Multi replica parallel query is disabled.");
+
     replica_states.reserve(connections.size());
     for (auto & connection : connections)
     {
@@ -51,7 +53,7 @@ MultiplexedConnections::MultiplexedConnections(
         replica_states.push_back(std::move(replica_state));
     }
 
-    active_connection_count = connections.size();
+    active_connection_count = replica_states.size();
 }
 
 void MultiplexedConnections::sendScalarsData(Scalars & data)
@@ -77,7 +79,7 @@ void MultiplexedConnections::sendExternalTablesData(std::vector<ExternalTablesDa
         throw Exception("Cannot send external tables data: query not yet sent.", ErrorCodes::LOGICAL_ERROR);
 
     if (data.size() != active_connection_count)
-        throw Exception("Mismatch between replicas and data sources", ErrorCodes::MISMATCH_REPLICAS_DATA_SOURCES);
+        throw Exception("Mismatch between replicas and data sources", ErrorCodes::LOGICAL_ERROR);
 
     auto it = data.begin();
     for (ReplicaState & state : replica_states)
@@ -117,15 +119,10 @@ void MultiplexedConnections::sendQuery(
             modified_settings.group_by_two_level_threshold = 0;
             modified_settings.group_by_two_level_threshold_bytes = 0;
         }
-    }
 
-    /// TODO@json.lrj need check
-    {
-        /// Use single replica.
-        replica_states[0].connection->sendQuery(timeouts, query, query_id,
+        replica.connection->sendQuery(timeouts, query, query_id,
                 stage, &modified_settings, &client_info, with_pending_data);
     }
-
     sent_query = true;
 }
 
@@ -246,7 +243,7 @@ Packet MultiplexedConnections::receivePacketUnlocked(AsyncCallback async_callbac
     ReplicaState & state = getReplicaForReading();
     current_connection = state.connection;
     if (current_connection == nullptr)
-        throw Exception("Logical error: no available replica", ErrorCodes::NO_AVAILABLE_REPLICA);
+        throw Exception("Logical error: no available replica", ErrorCodes::LOGICAL_ERROR);
 
     Packet packet;
     {
@@ -296,55 +293,7 @@ Packet MultiplexedConnections::receivePacketUnlocked(AsyncCallback async_callbac
 
 MultiplexedConnections::ReplicaState & MultiplexedConnections::getReplicaForReading()
 {
-    if (replica_states.size() == 1)
-        return replica_states[0];
-
-    Poco::Net::Socket::SocketList read_list;
-    read_list.reserve(active_connection_count);
-
-    /// First, we check if there are data already in the buffer
-    /// of at least one connection.
-    for (const ReplicaState & state : replica_states)
-    {
-        Connection * connection = state.connection;
-        if ((connection != nullptr) && connection->hasReadPendingData())
-            read_list.push_back(*connection->socket);
-    }
-
-    /// If no data was found, then we check if there are any connections ready for reading.
-    if (read_list.empty())
-    {
-        Poco::Net::Socket::SocketList write_list;
-        Poco::Net::Socket::SocketList except_list;
-
-        for (const ReplicaState & state : replica_states)
-        {
-            Connection * connection = state.connection;
-            if (connection != nullptr)
-                read_list.push_back(*connection->socket);
-        }
-
-        int n = Poco::Net::Socket::select(read_list, write_list, except_list, settings.receive_timeout);
-
-        if (n == 0)
-            throw Exception("Timeout exceeded while reading from " + dumpAddressesUnlocked(), ErrorCodes::TIMEOUT_EXCEEDED);
-    }
-
-    /// TODO Absolutely wrong code: read_list could be empty; motivation of rand is unclear.
-    /// This code path is disabled by default.
-
-    auto & socket = read_list[thread_local_rng() % read_list.size()];
-    if (fd_to_replica_state_idx.empty())
-    {
-        fd_to_replica_state_idx.reserve(replica_states.size());
-        size_t replica_state_number = 0;
-        for (const auto & replica_state : replica_states)
-        {
-            fd_to_replica_state_idx.emplace(replica_state.connection->socket->impl()->sockfd(), replica_state_number);
-            ++replica_state_number;
-        }
-    }
-    return replica_states[fd_to_replica_state_idx.at(socket.impl()->sockfd())];
+    return replica_states[0];
 }
 
 void MultiplexedConnections::invalidateReplica(ReplicaState & state)

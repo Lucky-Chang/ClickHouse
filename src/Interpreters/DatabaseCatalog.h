@@ -23,7 +23,6 @@
 
 namespace DB
 {
-
 class IDatabase;
 class Exception;
 class ColumnsDescription;
@@ -85,7 +84,7 @@ using DDLGuardPtr = std::unique_ptr<DDLGuard>;
 /// TemporaryTableHolder object can be attached to a query or session Context, so table will be accessible through the context.
 struct TemporaryTableHolder : boost::noncopyable, WithContext
 {
-    using Creator = std::function<StoragePtr (const StorageID &)>;
+    using Creator = std::function<StoragePtr(const StorageID &)>;
 
     TemporaryTableHolder(ContextPtr context, const Creator & creator, const ASTPtr & query = {});
 
@@ -98,7 +97,7 @@ struct TemporaryTableHolder : boost::noncopyable, WithContext
         bool create_for_global_subquery = false);
 
     TemporaryTableHolder(TemporaryTableHolder && rhs);
-    TemporaryTableHolder & operator = (TemporaryTableHolder && rhs);
+    TemporaryTableHolder & operator=(TemporaryTableHolder && rhs);
 
     ~TemporaryTableHolder();
 
@@ -106,7 +105,7 @@ struct TemporaryTableHolder : boost::noncopyable, WithContext
 
     StoragePtr getTable() const;
 
-    operator bool () const { return id != UUIDHelpers::Nil; }
+    operator bool() const { return id != UUIDHelpers::Nil; }
 
     IDatabase * temporary_tables = nullptr;
     UUID id = UUIDHelpers::Nil;
@@ -167,42 +166,14 @@ public:
     StoragePtr tryGetTable(const StorageID & table_id, ContextPtr context) const;
     DatabaseAndTable getDatabaseAndTable(const StorageID & table_id, ContextPtr context) const;
     DatabaseAndTable tryGetDatabaseAndTable(const StorageID & table_id, ContextPtr context) const;
-    DatabaseAndTable getTableImpl(const StorageID & table_id,
-                                  ContextPtr context,
-                                  std::optional<Exception> * exception = nullptr) const;
+    DatabaseAndTable getTableImpl(const StorageID & table_id, ContextPtr context, std::optional<Exception> * exception = nullptr) const;
 
     void addDependency(const StorageID & from, const StorageID & where);
     void removeDependency(const StorageID & from, const StorageID & where);
     Dependencies getDependencies(const StorageID & from) const;
 
     /// For Materialized and Live View
-    void updateDependency(const StorageID & old_from, const StorageID & old_where,const StorageID & new_from, const StorageID & new_where);
-
-    /// If table has UUID, addUUIDMapping(...) must be called when table attached to some database
-    /// removeUUIDMapping(...) must be called when it detached,
-    /// and removeUUIDMappingFinally(...) must be called when table is dropped and its data removed from disk.
-    /// Such tables can be accessed by persistent UUID instead of database and table name.
-    void addUUIDMapping(const UUID & uuid, const DatabasePtr & database, const StoragePtr & table);
-    void removeUUIDMapping(const UUID & uuid);
-    void removeUUIDMappingFinally(const UUID & uuid);
-    /// For moving table between databases
-    void updateUUIDMapping(const UUID & uuid, DatabasePtr database, StoragePtr table);
-    /// This method adds empty mapping (with database and storage equal to nullptr).
-    /// It's required to "lock" some UUIDs and protect us from collision.
-    /// Collisions of random 122-bit integers are very unlikely to happen,
-    /// but we allow to explicitly specify UUID in CREATE query (in particular for testing).
-    /// If some UUID was already added and we are trying to add it again,
-    /// this method will throw an exception.
-    void addUUIDMapping(const UUID & uuid);
-
-    static String getPathForUUID(const UUID & uuid);
-
-    DatabaseAndTable tryGetByUUID(const UUID & uuid) const;
-
-    String getPathForDroppedMetadata(const StorageID & table_id) const;
-    void enqueueDroppedTableCleanup(StorageID table_id, StoragePtr table, String dropped_metadata_path, bool ignore_delay = false);
-
-    void waitTableFinallyDropped(const UUID & uuid);
+    void updateDependency(const StorageID & old_from, const StorageID & old_where, const StorageID & new_from, const StorageID & new_where);
 
 private:
     // The global instance of database catalog. unique_ptr is to allow
@@ -216,46 +187,10 @@ private:
 
     void shutdownImpl();
 
-
-    struct UUIDToStorageMapPart
-    {
-        std::unordered_map<UUID, DatabaseAndTable> map;
-        mutable std::mutex mutex;
-    };
-
-    static constexpr UInt64 bits_for_first_level = 4;
-    using UUIDToStorageMap = std::array<UUIDToStorageMapPart, 1ull << bits_for_first_level>;
-
-    static inline size_t getFirstLevelIdx(const UUID & uuid)
-    {
-        return uuid.toUnderType().items[0] >> (64 - bits_for_first_level);
-    }
-
-    struct TableMarkedAsDropped
-    {
-        StorageID table_id = StorageID::createEmpty();
-        StoragePtr table;
-        String metadata_path;
-        time_t drop_time{};
-    };
-    using TablesMarkedAsDropped = std::list<TableMarkedAsDropped>;
-
-    void loadMarkedAsDroppedTables();
-    void dropTableDataTask();
-    void dropTableFinally(const TableMarkedAsDropped & table);
-
-    static constexpr size_t reschedule_time_ms = 100;
-    static constexpr time_t drop_error_cooldown_sec = 5;
-
-    using UUIDToDatabaseMap = std::unordered_map<UUID, DatabasePtr>;
-
     mutable std::mutex databases_mutex;
 
     ViewDependencies view_dependencies;
-
     Databases databases;
-    UUIDToDatabaseMap db_uuid_map;
-    UUIDToStorageMap uuid_map;
 
     Poco::Logger * log;
 
@@ -270,15 +205,6 @@ private:
     DDLGuards ddl_guards;
     /// If you capture mutex and ddl_guards_mutex, then you need to grab them strictly in this order.
     mutable std::mutex ddl_guards_mutex;
-
-    TablesMarkedAsDropped tables_marked_dropped;
-    std::unordered_set<UUID> tables_marked_dropped_ids;
-    mutable std::mutex tables_marked_dropped_mutex;
-
-    std::unique_ptr<BackgroundSchedulePoolTaskHolder> drop_task;
-    static constexpr time_t default_drop_delay_sec = 8 * 60;
-    time_t drop_delay_sec = default_drop_delay_sec;
-    std::condition_variable wait_table_finally_dropped;
 };
 
 }

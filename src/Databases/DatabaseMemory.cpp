@@ -1,4 +1,5 @@
 #include <common/logger_useful.h>
+#include "Core/UUID.h"
 #include <Databases/DatabaseMemory.h>
 #include <Databases/DatabasesCommon.h>
 #include <Interpreters/Context.h>
@@ -19,7 +20,10 @@ namespace ErrorCodes
 DatabaseMemory::DatabaseMemory(const String & name_, UUID uuid, ContextPtr context_)
     : DatabaseWithOwnTablesBase(name_, uuid, "DatabaseMemory(" + name_ + ")", context_)
     , data_path("data/" + escapeForFileName(database_name) + "/")
-{}
+{
+    /// clean memory database data dir in start up
+    fs::remove(context_->getPath() + getDataPath());
+}
 
 void DatabaseMemory::createTable(
     ContextPtr /*context*/,
@@ -53,9 +57,6 @@ void DatabaseMemory::dropTable(
     }
     table->is_dropped = true;
     create_queries.erase(table_name);
-    UUID table_uuid = table->getStorageID().uuid;
-    if (table_uuid != UUIDHelpers::Nil)
-        DatabaseCatalog::instance().removeUUIDMappingFinally(table_uuid);
 }
 
 ASTPtr DatabaseMemory::getCreateDatabaseQuery() const
@@ -85,7 +86,8 @@ UUID DatabaseMemory::tryGetTableUUID(const String & table_name) const
 {
     if (auto table = tryGetTable(table_name, getContext()))
         return table->getStorageID().uuid;
-    return UUIDHelpers::Nil;
+    throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table {}.{} doesn't exist",
+                    backQuote(database_name), backQuote(table_name));
 }
 
 void DatabaseMemory::drop(ContextPtr local_context)

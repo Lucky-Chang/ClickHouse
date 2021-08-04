@@ -7,6 +7,7 @@
 #include <Storages/StorageFactory.h>
 #include <Common/typeid_cast.h>
 #include <Common/escapeForFileName.h>
+#include "Core/UUID.h"
 #include <TableFunctions/TableFunctionFactory.h>
 
 
@@ -40,18 +41,28 @@ StoragePtr DatabaseWithOwnTablesBase::tryGetTable(const String & table_name, Con
     return {};
 }
 
+UUID DatabaseWithOwnTablesBase::tryGetTableUUID(const String & table_name) const
+{
+    std::lock_guard lock(mutex);
+    auto it = tables.find(table_name);
+    if (it != tables.end())
+        return it->second->getStorageID().uuid;
+    throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table {}.{} doesn't exist",
+                    backQuote(database_name), backQuote(table_name));
+}
+
 DatabaseTablesIteratorPtr DatabaseWithOwnTablesBase::getTablesIterator(ContextPtr, const FilterByNameFunction & filter_by_table_name)
 {
     std::lock_guard lock(mutex);
     if (!filter_by_table_name)
-        return std::make_unique<DatabaseTablesSnapshotIterator>(tables, database_name);
+        return std::make_unique<DatabaseTablesSnapshotIterator>(tables, database_name, database_uuid);
 
     Tables filtered_tables;
     for (const auto & [table_name, storage] : tables)
         if (filter_by_table_name(table_name))
             filtered_tables.emplace(table_name, storage);
 
-    return std::make_unique<DatabaseTablesSnapshotIterator>(std::move(filtered_tables), database_name);
+    return std::make_unique<DatabaseTablesSnapshotIterator>(std::move(filtered_tables), database_name, database_uuid);
 }
 
 bool DatabaseWithOwnTablesBase::empty() const
@@ -76,14 +87,6 @@ StoragePtr DatabaseWithOwnTablesBase::detachTableUnlocked(const String & table_n
                         backQuote(database_name), backQuote(table_name));
     res = it->second;
     tables.erase(it);
-
-    auto table_id = res->getStorageID();
-    if (table_id.hasUUID())
-    {
-        assert(database_name == DatabaseCatalog::TEMPORARY_DATABASE || getUUID() != UUIDHelpers::Nil);
-        DatabaseCatalog::instance().removeUUIDMapping(table_id.uuid);
-    }
-
     return res;
 }
 
@@ -100,18 +103,8 @@ void DatabaseWithOwnTablesBase::attachTableUnlocked(const String & table_name, c
         throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database was renamed to `{}`, cannot create table in `{}`",
                         database_name, table_id.database_name);
 
-    if (table_id.hasUUID())
-    {
-        assert(database_name == DatabaseCatalog::TEMPORARY_DATABASE || getUUID() != UUIDHelpers::Nil);
-        DatabaseCatalog::instance().addUUIDMapping(table_id.uuid, shared_from_this(), table);
-    }
-
     if (!tables.emplace(table_name, table).second)
-    {
-        if (table_id.hasUUID())
-            DatabaseCatalog::instance().removeUUIDMapping(table_id.uuid);
         throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS, "Table {} already exists.", table_id.getFullTableName());
-    }
 }
 
 void DatabaseWithOwnTablesBase::shutdown()
@@ -127,18 +120,7 @@ void DatabaseWithOwnTablesBase::shutdown()
 
     for (const auto & kv : tables_snapshot)
     {
-        kv.second->flush();
-    }
-
-    for (const auto & kv : tables_snapshot)
-    {
-        auto table_id = kv.second->getStorageID();
         kv.second->flushAndShutdown();
-        if (table_id.hasUUID())
-        {
-            assert(getDatabaseName() == DatabaseCatalog::TEMPORARY_DATABASE || getUUID() != UUIDHelpers::Nil);
-            DatabaseCatalog::instance().removeUUIDMapping(table_id.uuid);
-        }
     }
 
     std::lock_guard lock(mutex);

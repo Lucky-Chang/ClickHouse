@@ -23,6 +23,8 @@ public:
 
     StoragePtr tryGetTable(const String & table_name, ContextPtr context) const override;
 
+    UUID tryGetTableUUID(const String & table_name) const override;
+
     bool empty() const override;
 
     void attachTable(const String & table_name, const StoragePtr & table, const String & relative_table_path) override;

@@ -11,7 +11,7 @@ namespace DB
 {
 
 
-/** To retrieve data directly from multiple replicas (connections) from one shard
+/** To retrieve data directly from single replica (connections) from one shard
   * within a single thread. As a degenerate case, it can also work with one connection.
   * It is assumed that all functions except sendCancel are always executed in one thread.
   *
@@ -76,7 +76,6 @@ private:
     /// Mark the replica as invalid.
     void invalidateReplica(ReplicaState & replica_state);
 
-private:
     const Settings & settings;
 
     /// The current number of valid connections to the replicas of this shard.

@@ -42,6 +42,7 @@
 #include <common/argsToConfig.h>
 #include <Common/TerminalSize.h>
 #include <Common/randomSeed.h>
+#include <Core/UUID.h>
 #include <filesystem>
 
 namespace fs = std::filesystem;
@@ -183,7 +184,7 @@ static void attachSystemTables(ContextPtr context)
     if (!system_database)
     {
         /// TODO: add attachTableDelayed into DatabaseMemory to speedup loading
-        system_database = std::make_shared<DatabaseMemory>(DatabaseCatalog::SYSTEM_DATABASE, context);
+        system_database = std::make_shared<DatabaseMemory>(DatabaseCatalog::SYSTEM_DATABASE, UUIDHelpers::generateV4(), context);
         DatabaseCatalog::instance().attachDatabase(DatabaseCatalog::SYSTEM_DATABASE, system_database);
     }
 
@@ -275,7 +276,7 @@ try
       *  if such tables will not be dropped, clickhouse-server will not be able to load them due to security reasons.
       */
     std::string default_database = config().getString("default_database", "_local");
-    DatabaseCatalog::instance().attachDatabase(default_database, std::make_shared<DatabaseMemory>(default_database, global_context));
+    DatabaseCatalog::instance().attachDatabase(default_database, std::make_shared<DatabaseMemory>(default_database, UUIDHelpers::generateV4(), global_context));
     global_context->setCurrentDatabase(default_database);
     applyCmdOptions(global_context);
 

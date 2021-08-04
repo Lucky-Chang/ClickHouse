@@ -31,10 +31,10 @@ public:
     DatabaseMaterializedPostgreSQL(
         ContextPtr context_,
         const String & metadata_path_,
-        UUID uuid_,
         const ASTStorage * database_engine_define_,
         bool is_attach_,
         const String & database_name_,
+        UUID uuid_,
         const String & postgres_database_name,
         const postgres::ConnectionInfo & connection_info,
         std::unique_ptr<MaterializedPostgreSQLSettings> settings_);

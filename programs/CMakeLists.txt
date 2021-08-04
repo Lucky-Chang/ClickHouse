@@ -22,9 +22,6 @@ option (ENABLE_CLICKHOUSE_EXTRACT_FROM_CONFIG "Configs processor (extract values
 # https://clickhouse.tech/docs/en/operations/utilities/clickhouse-compressor/
 option (ENABLE_CLICKHOUSE_COMPRESSOR "Data compressor and decompressor" ${ENABLE_CLICKHOUSE_ALL})
 
-# https://clickhouse.tech/docs/en/operations/utilities/clickhouse-copier/
-option (ENABLE_CLICKHOUSE_COPIER "Inter-cluster data copying mode" ${ENABLE_CLICKHOUSE_ALL})
-
 option (ENABLE_CLICKHOUSE_FORMAT "Queries pretty-printer and formatter with syntax highlighting"
     ${ENABLE_CLICKHOUSE_ALL})
 
@@ -104,12 +101,6 @@ if (ENABLE_CLICKHOUSE_COMPRESSOR)
     message(STATUS "Compressor mode: ON")
 else()
     message(STATUS "Compressor mode: OFF")
-endif()
-
-if (ENABLE_CLICKHOUSE_COPIER)
-    message(STATUS "Copier mode: ON")
-else()
-    message(STATUS "Copier mode: OFF")
 endif()
 
 if (ENABLE_CLICKHOUSE_FORMAT)
@@ -221,7 +212,6 @@ add_subdirectory (local)
 add_subdirectory (benchmark)
 add_subdirectory (extract-from-config)
 add_subdirectory (compressor)
-add_subdirectory (copier)
 add_subdirectory (format)
 add_subdirectory (obfuscator)
 add_subdirectory (install)
@@ -250,7 +240,6 @@ if (CLICKHOUSE_ONE_SHARED)
     ${CLICKHOUSE_CLIENT_SOURCES}
     ${CLICKHOUSE_LOCAL_SOURCES}
     ${CLICKHOUSE_BENCHMARK_SOURCES}
-    ${CLICKHOUSE_COPIER_SOURCES}
     ${CLICKHOUSE_EXTRACT_FROM_CONFIG_SOURCES}
     ${CLICKHOUSE_COMPRESSOR_SOURCES}
     ${CLICKHOUSE_FORMAT_SOURCES}
@@ -265,7 +254,6 @@ if (CLICKHOUSE_ONE_SHARED)
       ${CLICKHOUSE_CLIENT_LINK}
       ${CLICKHOUSE_LOCAL_LINK}
       ${CLICKHOUSE_BENCHMARK_LINK}
-      ${CLICKHOUSE_COPIER_LINK}
       ${CLICKHOUSE_EXTRACT_FROM_CONFIG_LINK}
       ${CLICKHOUSE_COMPRESSOR_LINK}
       ${CLICKHOUSE_FORMAT_LINK}
@@ -280,7 +268,6 @@ if (CLICKHOUSE_ONE_SHARED)
       ${CLICKHOUSE_CLIENT_INCLUDE}
       ${CLICKHOUSE_LOCAL_INCLUDE}
       ${CLICKHOUSE_BENCHMARK_INCLUDE}
-      ${CLICKHOUSE_COPIER_INCLUDE}
       ${CLICKHOUSE_EXTRACT_FROM_CONFIG_INCLUDE}
       ${CLICKHOUSE_COMPRESSOR_INCLUDE}
       ${CLICKHOUSE_FORMAT_INCLUDE}
@@ -305,7 +292,6 @@ if (CLICKHOUSE_SPLIT_BINARY)
         clickhouse-format
         clickhouse-obfuscator
         clickhouse-git-import
-        clickhouse-copier
     )
 
     if (ENABLE_CLICKHOUSE_ODBC_BRIDGE)
@@ -353,9 +339,6 @@ else ()
     if (ENABLE_CLICKHOUSE_BENCHMARK)
         clickhouse_target_link_split_lib(clickhouse benchmark)
     endif ()
-    if (ENABLE_CLICKHOUSE_COPIER)
-        clickhouse_target_link_split_lib(clickhouse copier)
-    endif ()
     if (ENABLE_CLICKHOUSE_EXTRACT_FROM_CONFIG)
         clickhouse_target_link_split_lib(clickhouse extract-from-config)
     endif ()
@@ -401,11 +384,6 @@ else ()
         add_custom_target (clickhouse-benchmark ALL COMMAND ${CMAKE_COMMAND} -E create_symlink clickhouse clickhouse-benchmark DEPENDS clickhouse)
         install (FILES "${CMAKE_CURRENT_BINARY_DIR}/clickhouse-benchmark" DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
         list(APPEND CLICKHOUSE_BUNDLE clickhouse-benchmark)
-    endif ()
-    if (ENABLE_CLICKHOUSE_COPIER)
-        add_custom_target (clickhouse-copier ALL COMMAND ${CMAKE_COMMAND} -E create_symlink clickhouse clickhouse-copier DEPENDS clickhouse)
-        install (FILES "${CMAKE_CURRENT_BINARY_DIR}/clickhouse-copier" DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
-        list(APPEND CLICKHOUSE_BUNDLE clickhouse-copier)
     endif ()
     if (ENABLE_CLICKHOUSE_EXTRACT_FROM_CONFIG)
         add_custom_target (clickhouse-extract-from-config ALL COMMAND ${CMAKE_COMMAND} -E create_symlink clickhouse clickhouse-extract-from-config DEPENDS clickhouse)

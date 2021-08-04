@@ -14,21 +14,12 @@ namespace ErrorCodes
 
 void TableStatus::write(WriteBuffer & out) const
 {
-    writeBinary(is_replicated, out);
-    if (is_replicated)
-    {
-        writeVarUInt(absolute_delay, out);
-    }
+    writeBinary(is_stale, out);
 }
 
 void TableStatus::read(ReadBuffer & in)
 {
-    absolute_delay = 0;
-    readBinary(is_replicated, in);
-    if (is_replicated)
-    {
-        readVarUInt(absolute_delay, in);
-    }
+    readBinary(is_stale, in);
 }
 
 void TablesStatusRequest::write(WriteBuffer & out, UInt64 server_protocol_revision) const

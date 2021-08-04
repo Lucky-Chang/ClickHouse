@@ -48,7 +48,7 @@ public:
         const String & query_, const Block & header_, ContextPtr context_,
         const ThrottlerPtr & throttler = nullptr, const Scalars & scalars_ = Scalars(), const Tables & external_tables_ = Tables(),
         QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete, std::shared_ptr<TaskIterator> task_iterator_ = {});
-
+        
     /// Takes a pool and gets one or several connections from it.
     RemoteQueryExecutor(
         const ConnectionPoolWithFailoverPtr & pool,
@@ -92,9 +92,6 @@ public:
     /// Set the query_id. For now, used by performance test to later find the query
     /// in the server query_log. Must be called before sending the query to the server.
     void setQueryId(const std::string& query_id_) { assert(!sent_query); query_id = query_id_; }
-
-    /// Specify how we allocate connections on a shard.
-    void setPoolMode(PoolMode pool_mode_) { pool_mode = pool_mode_; }
 
     void setMainTable(StorageID main_table_) { main_table = std::move(main_table_); }
 
@@ -161,7 +158,7 @@ private:
       */
     std::atomic<bool> got_unknown_packet_from_replica { false };
 
-    PoolMode pool_mode = PoolMode::GET_MANY;
+    const PoolMode pool_mode = PoolMode::GET_ONE;
     StorageID main_table = StorageID::createEmpty();
 
     Poco::Logger * log = nullptr;

@@ -192,8 +192,8 @@ void applyMetadataChangesToCreateQuery(const ASTPtr & query, const StorageInMemo
 
 DatabaseOnDisk::DatabaseOnDisk(
     const String & name,
-    const String & metadata_path_,
     UUID uuid, 
+    const String & metadata_path_,
     const String & data_path_,
     const String & logger,
     ContextPtr local_context)
@@ -520,7 +520,6 @@ void DatabaseOnDisk::iterateMetadataFiles(ContextPtr local_context, const Iterat
 {
     auto process_tmp_drop_metadata_file = [&](const String & file_name)
     {
-        assert(getUUID() == UUIDHelpers::Nil);
         static const char * tmp_drop_ext = ".sql.tmp_drop";
         const std::string object_name = file_name.substr(0, file_name.size() - strlen(tmp_drop_ext));
 

@@ -34,14 +34,14 @@ namespace ErrorCodes
 DatabaseMaterializedPostgreSQL::DatabaseMaterializedPostgreSQL(
         ContextPtr context_,
         const String & metadata_path_,
-        UUID uuid_,
         const ASTStorage * database_engine_define_,
         bool is_attach_,
         const String & database_name_,
+        UUID uuid_,
         const String & postgres_database_name,
         const postgres::ConnectionInfo & connection_info_,
         std::unique_ptr<MaterializedPostgreSQLSettings> settings_)
-    : DatabaseOrdinary(database_name_, metadata_path_, uuid_, "DatabaseMaterializedPostgreSQL (" + database_name_ + ")", context_)
+    : DatabaseOrdinary(database_name_, uuid_, metadata_path_, "DatabaseMaterializedPostgreSQL (" + database_name_ + ")", context_)
     , database_engine_define(database_engine_define_->clone())
     , is_attach(is_attach_)
     , remote_database_name(postgres_database_name)
@@ -187,7 +187,7 @@ void DatabaseMaterializedPostgreSQL::stopReplication()
 
 void DatabaseMaterializedPostgreSQL::dropTable(ContextPtr local_context, const String & table_name, bool no_delay)
 {
-    /// Modify context into nested_context and pass query to Atomic database.
+    /// Modify context into nested_context and pass query to Ordinary database.
     DatabaseOrdinary::dropTable(StorageMaterializedPostgreSQL::makeNestedTableContext(local_context), table_name, no_delay);
 }
 

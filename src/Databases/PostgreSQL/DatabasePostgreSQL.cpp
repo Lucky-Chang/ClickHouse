@@ -83,7 +83,7 @@ DatabaseTablesIteratorPtr DatabasePostgreSQL::getTablesIterator(ContextPtr local
         if (!detached_or_dropped.count(table_name))
             tables[table_name] = fetchTable(table_name, local_context, true);
 
-    return std::make_unique<DatabaseTablesSnapshotIterator>(tables, database_name);
+    return std::make_unique<DatabaseTablesSnapshotIterator>(tables, database_name, database_uuid);
 }
 
 

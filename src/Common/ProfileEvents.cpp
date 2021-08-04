@@ -57,16 +57,6 @@
     \
     M(QueryMaskingRulesMatch, "Number of times query masking rules was successfully matched.") \
     \
-    M(ReplicatedPartFetches, "Number of times a data part was downloaded from replica of a ReplicatedMergeTree table.") \
-    M(ReplicatedPartFailedFetches, "Number of times a data part was failed to download from replica of a ReplicatedMergeTree table.") \
-    M(ObsoleteReplicatedParts, "") \
-    M(ReplicatedPartMerges, "Number of times data parts of ReplicatedMergeTree tables were successfully merged.") \
-    M(ReplicatedPartFetchesOfMerged, "Number of times we prefer to download already merged part from replica of ReplicatedMergeTree table instead of performing a merge ourself (usually we prefer doing a merge ourself to save network traffic). This happens when we have not all source parts to perform a merge or when the data part is old enough.") \
-    M(ReplicatedPartMutations, "") \
-    M(ReplicatedPartChecks, "") \
-    M(ReplicatedPartChecksFailed, "") \
-    M(ReplicatedDataLoss, "Number of times a data part that we wanted doesn't exist on any replica (even on replicas that are offline right now). That data parts are definitely lost. This is normal due to asynchronous replication (if quorum inserts were not enabled), when the replica on which the data part was written was failed and when it became online after fail it doesn't contain that data part.") \
-    \
     M(InsertedRows, "Number of rows INSERTed to all tables.") \
     M(InsertedBytes, "Number of bytes (uncompressed; for columns as they stored in memory) INSERTed to all tables.") \
     M(DelayedInserts, "Number of times the INSERT of a block to a MergeTree table was throttled due to high number of active data parts for partition.") \
@@ -75,7 +65,6 @@
     M(DistributedDelayedInserts, "Number of times the INSERT of a block to a Distributed table was throttled due to high number of pending bytes.") \
     M(DistributedRejectedInserts, "Number of times the INSERT of a block to a Distributed table was rejected with 'Too many bytes' exception due to high number of pending bytes.") \
     M(DistributedDelayedInsertsMilliseconds, "Total number of milliseconds spent while the INSERT of a block to a Distributed table was throttled due to high number of pending bytes.") \
-    M(DuplicatedInsertedBlocks, "Number of times the INSERTed block to a ReplicatedMergeTree table was deduplicated.") \
     \
     M(ZooKeeperInit, "") \
     M(ZooKeeperTransactions, "") \
@@ -98,10 +87,7 @@
     \
     M(DistributedConnectionFailTry, "Total count when distributed connection fails with retry") \
     M(DistributedConnectionMissingTable, "") \
-    M(DistributedConnectionStaleReplica, "") \
     M(DistributedConnectionFailAtAll, "Total count when distributed connection fails after all retries finished") \
-    \
-    M(HedgedRequestsChangeReplica, "Total count when timeout for changing replica expired in hedged requests.") \
     \
     M(CompileFunction, "Number of times a compilation of generated LLVM code (to create fused function for complex expressions) was initiated.") \
     M(CompiledFunctionExecute, "Number of times a compiled function was executed.") \
@@ -117,8 +103,6 @@
     \
     M(SlowRead, "Number of reads from a file that were slow. This indicate system overload. Thresholds are controlled by read_backoff_* settings.") \
     M(ReadBackoff, "Number of times the number of query processing threads was lowered due to slow reads.") \
-    \
-    M(ReplicaPartialShutdown, "How many times Replicated table has to deinitialize its state due to session expiration in ZooKeeper. The state is reinitialized every time when ZooKeeper is available again.") \
     \
     M(SelectedParts, "Number of data parts selected to read from a MergeTree table.") \
     M(SelectedRanges, "Number of (non-adjacent) ranges in all data parts selected to read from a MergeTree table.") \
@@ -172,8 +156,6 @@
     M(DictCacheLockReadNs, "") \
     \
     M(DistributedSyncInsertionTimeoutExceeded, "") \
-    M(DataAfterMergeDiffersFromReplica, "") \
-    M(DataAfterMutationDiffersFromReplica, "") \
     M(PolygonsAddedToPool, "") \
     M(PolygonsInPoolAllocatedBytes, "") \
     M(RWLockAcquiredReadLocks, "") \
@@ -228,11 +210,6 @@
     \
     M(CannotWriteToWriteBufferDiscard, "Number of stack traces dropped by query profiler or signal handler because pipe is full or cannot write to pipe.") \
     M(QueryProfilerSignalOverruns, "Number of times we drop processing of a signal due to overrun plus the number of signals that OS has not delivered due to overrun.") \
-    \
-    M(CreatedLogEntryForMerge, "Successfully created log entry to merge parts in ReplicatedMergeTree.") \
-    M(NotCreatedLogEntryForMerge, "Log entry to merge parts in ReplicatedMergeTree is not created due to concurrent log update by another replica.") \
-    M(CreatedLogEntryForMutation, "Successfully created log entry to mutate parts in ReplicatedMergeTree.") \
-    M(NotCreatedLogEntryForMutation, "Log entry to mutate parts in ReplicatedMergeTree is not created due to concurrent log update by another replica.") \
     \
     M(S3ReadMicroseconds, "Time of GET and HEAD requests to S3 storage.") \
     M(S3ReadBytes, "Read bytes (incoming) in GET and HEAD requests to S3 storage.") \

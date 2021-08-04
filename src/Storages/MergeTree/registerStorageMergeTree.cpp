@@ -32,7 +32,6 @@ namespace ErrorCodes
     extern const int UNKNOWN_ELEMENT_IN_CONFIG;
     extern const int NO_ELEMENTS_IN_CONFIG;
     extern const int UNKNOWN_STORAGE;
-    extern const int NO_REPLICA_NAME_GIVEN;
 }
 
 
