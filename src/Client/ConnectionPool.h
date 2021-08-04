@@ -51,7 +51,7 @@ public:
     ConnectionPool(unsigned max_connections_,
             const String & host_,
             UInt16 port_,
-            const String & default_database_,
+            const String & default_catalog_,
             const String & user_,
             const String & password_,
             const String & cluster_,
@@ -64,7 +64,7 @@ public:
         &Poco::Logger::get("ConnectionPool (" + host_ + ":" + toString(port_) + ")")),
         host(host_),
         port(port_),
-        default_database(default_database_),
+        default_catalog(default_catalog_),
         user(user_),
         password(password_),
         cluster(cluster_),
@@ -112,7 +112,7 @@ protected:
     {
         return std::make_shared<Connection>(
             host, port,
-            default_database, user, password,
+            default_catalog, user, password,
             cluster, cluster_secret,
             client_name, compression, secure);
     }
@@ -120,7 +120,7 @@ protected:
 private:
     String host;
     UInt16 port;
-    String default_database;
+    String default_catalog;
     String user;
     String password;
 

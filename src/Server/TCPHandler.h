@@ -140,6 +140,7 @@ private:
     Stopwatch after_check_cancelled;
     Stopwatch after_send_progress;
 
+    String default_catalog;
     String default_database;
 
     /// For inter-server secret (remote_server.*.secret)

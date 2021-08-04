@@ -75,8 +75,9 @@ struct Packet
   * How to use - see Core/Protocol.h
   * (Implementation of server end - see Server/TCPHandler.h)
   *
-  * As 'default_database' empty string could be passed
-  *  - in that case, server will use it's own default database.
+  * As 'default_catalog' empty string could be passed
+  * 'default_database' empty string could be passed
+  *  - in that case, server will use it's own default setting.
   */
 class Connection : private boost::noncopyable
 {
@@ -84,6 +85,7 @@ class Connection : private boost::noncopyable
 
 public:
     Connection(const String & host_, UInt16 port_,
+        const String & default_catalog_,
         const String & default_database_,
         const String & user_, const String & password_,
         const String & cluster_,
@@ -93,7 +95,8 @@ public:
         Protocol::Secure secure_,
         Poco::Timespan sync_request_timeout_ = Poco::Timespan(DBMS_DEFAULT_SYNC_REQUEST_TIMEOUT_SEC, 0))
         :
-        host(host_), port(port_), default_database(default_database_),
+        host(host_), port(port_), default_catalog(default_catalog_),
+        default_database(default_database_),
         user(user_), password(password_),
         cluster(cluster_),
         cluster_secret(cluster_secret_),
@@ -123,6 +126,9 @@ public:
     /// Change default database. Changes will take effect on next reconnect.
     void setDefaultDatabase(const String & database);
 
+    /// Change default catalog. Changes will take effect on next reconnect.
+    void setDefaultCatalog(const String & catalog);
+
     void getServerVersion(const ConnectionTimeouts & timeouts,
                           String & name,
                           UInt64 & version_major,
@@ -138,6 +144,7 @@ public:
     const String & getDescription() const;
     const String & getHost() const;
     UInt16 getPort() const;
+    const String & getDefaultCatalog() const;
     const String & getDefaultDatabase() const;
 
     Protocol::Compression getCompression() const { return compression; }
@@ -211,6 +218,7 @@ public:
 private:
     String host;
     UInt16 port;
+    String default_catalog;
     String default_database;
     String user;
     String password;

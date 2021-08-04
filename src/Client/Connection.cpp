@@ -65,8 +65,8 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
         if (connected)
             disconnect();
 
-        LOG_TRACE(log_wrapper.get(), "Connecting. Database: {}. User: {}{}{}",
-            default_database.empty() ? "(not specified)" : default_database,
+        LOG_TRACE(log_wrapper.get(), "Connecting. Catalog: {}. User: {}{}{}",
+            default_catalog.empty() ? "(not specified)" : default_catalog,
             user,
             static_cast<bool>(secure) ? ". Secure" : "",
             static_cast<bool>(compression) ? "" : ". Uncompressed");
@@ -170,10 +170,10 @@ void Connection::sendHello()
         return false;
     };
 
-    if (has_control_character(default_database)
+    if (has_control_character(default_catalog)
         || has_control_character(user)
         || has_control_character(password))
-        throw Exception("Parameters 'default_database', 'user' and 'password' must not contain ASCII control characters", ErrorCodes::BAD_ARGUMENTS);
+        throw Exception("Parameters 'default_catalog', 'user' and 'password' must not contain ASCII control characters", ErrorCodes::BAD_ARGUMENTS);
 
     writeVarUInt(Protocol::Client::Hello, *out);
     writeStringBinary((DBMS_NAME " ") + client_name, *out);
@@ -181,6 +181,7 @@ void Connection::sendHello()
     writeVarUInt(DBMS_VERSION_MINOR, *out);
     // NOTE For backward compatibility of the protocol, client cannot send its version_patch.
     writeVarUInt(DBMS_TCP_PROTOCOL_VERSION, *out);
+    writeStringBinary(default_catalog, *out);
     writeStringBinary(default_database, *out);
     /// If interserver-secret is used, one do not need password
     /// (NOTE we do not check for DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET, since we cannot ignore inter-server secret if it was requested)
@@ -242,6 +243,16 @@ void Connection::receiveHello()
         disconnect();
         throwUnexpectedPacket(packet_type, "Hello or Exception");
     }
+}
+
+void Connection::setDefaultCatalog(const String & catalog)
+{
+    default_catalog = catalog;
+}
+
+const String & Connection::getDefaultCatalog() const
+{
+    return default_catalog;
 }
 
 void Connection::setDefaultDatabase(const String & database)

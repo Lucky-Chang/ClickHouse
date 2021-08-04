@@ -207,42 +207,31 @@ std::string DistributedBlockOutputStream::getCurrentStateDescription()
 
 void DistributedBlockOutputStream::initWritingJobs(const Block & first_block, size_t start, size_t end)
 {
-    const Settings & settings = context->getSettingsRef();
     const auto & addresses_with_failovers = cluster->getShardsAddresses();
-    const auto & shards_info = cluster->getShardsInfo();
     size_t num_shards = end - start;
 
     remote_jobs_count = 0;
     local_jobs_count = 0;
-    per_shard_jobs.resize(shards_info.size());
+    per_shard_jobs.resize(addresses_with_failovers.size());
 
     for (size_t shard_index : collections::range(start, end))
     {
-        const auto & shard_info = shards_info[shard_index];
         auto & shard_jobs = per_shard_jobs[shard_index];
 
-        /// If hasInternalReplication, than prefer local replica (if !prefer_localhost_replica)
-        if (!shard_info.hasInternalReplication() || !shard_info.isLocal() || !settings.prefer_localhost_replica)
-        {
-            const auto & replicas = addresses_with_failovers[shard_index];
+        const auto & replicas = addresses_with_failovers[shard_index];
 
-            for (size_t replica_index : collections::range(0, replicas.size()))
+        for (size_t replica_index : collections::range(0, replicas.size()))
+        {
+            if (replicas[replica_index].is_local)
             {
-                if (!replicas[replica_index].is_local || !settings.prefer_localhost_replica)
-                {
-                    shard_jobs.replicas_jobs.emplace_back(shard_index, replica_index, false, first_block);
-                    ++remote_jobs_count;
-
-                    if (shard_info.hasInternalReplication())
-                        break;
-                }
+                shard_jobs.replicas_jobs.emplace_back(shard_index, 0, true, first_block);
+                ++local_jobs_count;
             }
-        }
-
-        if (shard_info.isLocal() && settings.prefer_localhost_replica)
-        {
-            shard_jobs.replicas_jobs.emplace_back(shard_index, 0, true, first_block);
-            ++local_jobs_count;
+            else
+            {
+                shard_jobs.replicas_jobs.emplace_back(shard_index, replica_index, false, first_block);
+                ++remote_jobs_count;
+            }
         }
 
         if (num_shards > 1)
@@ -327,31 +316,15 @@ DistributedBlockOutputStream::runWritingJob(DistributedBlockOutputStream::JobRep
             if (!job.stream)
             {
                 auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(settings);
-                if (shard_info.hasInternalReplication())
-                {
-                    /// Skip replica_index in case of internal replication
-                    if (shard_job.replicas_jobs.size() != 1)
-                        throw Exception("There are several writing job for an automatically replicated shard", ErrorCodes::LOGICAL_ERROR);
+                const auto & replica = addresses.at(job.shard_index).at(job.replica_index);
 
-                    /// TODO: it make sense to rewrite skip_unavailable_shards and max_parallel_replicas here
-                    auto results = shard_info.pool->getManyChecked(timeouts, &settings, PoolMode::GET_ONE, main_table.getQualifiedName());
-                    if (results.empty() || results.front().entry.isNull())
-                        throw Exception("Expected exactly one connection for shard " + toString(job.shard_index), ErrorCodes::LOGICAL_ERROR);
+                const ConnectionPoolPtr & connection_pool = shard_info.per_replica_pools.at(job.replica_index);
+                if (!connection_pool)
+                    throw Exception("Connection pool for replica " + replica.readableString() + " does not exist", ErrorCodes::LOGICAL_ERROR);
 
-                    job.connection_entry = std::move(results.front().entry);
-                }
-                else
-                {
-                    const auto & replica = addresses.at(job.shard_index).at(job.replica_index);
-
-                    const ConnectionPoolPtr & connection_pool = shard_info.per_replica_pools.at(job.replica_index);
-                    if (!connection_pool)
-                        throw Exception("Connection pool for replica " + replica.readableString() + " does not exist", ErrorCodes::LOGICAL_ERROR);
-
-                    job.connection_entry = connection_pool->get(timeouts, &settings);
-                    if (job.connection_entry.isNull())
-                        throw Exception("Got empty connection for replica" + replica.readableString(), ErrorCodes::LOGICAL_ERROR);
-                }
+                job.connection_entry = connection_pool->get(timeouts, &settings);
+                if (job.connection_entry.isNull())
+                    throw Exception("Got empty connection for replica" + replica.readableString(), ErrorCodes::LOGICAL_ERROR);
 
                 if (throttler)
                     job.connection_entry->setThrottler(throttler);
@@ -584,34 +557,16 @@ void DistributedBlockOutputStream::writeAsyncImpl(const Block & block, size_t sh
     const auto & shard_info = cluster->getShardsInfo()[shard_id];
     const auto & settings = context->getSettingsRef();
 
-    if (shard_info.hasInternalReplication())
-    {
-        if (shard_info.isLocal() && settings.prefer_localhost_replica)
-            /// Prefer insert into current instance directly
-            writeToLocal(block, shard_info.getLocalNodeCount());
-        else
-        {
-            const auto & path = shard_info.insertPathForInternalReplication(
-                settings.prefer_localhost_replica,
-                settings.use_compact_format_in_distributed_parts_names);
-            if (path.empty())
-                throw Exception("Directory name for async inserts is empty", ErrorCodes::LOGICAL_ERROR);
-            writeToShard(block, {path});
-        }
-    }
-    else
-    {
-        if (shard_info.isLocal() && settings.prefer_localhost_replica)
-            writeToLocal(block, shard_info.getLocalNodeCount());
+    if (shard_info.isLocal() && settings.prefer_localhost_replica)
+        writeToLocal(block, shard_info.getLocalNodeCount());
 
-        std::vector<std::string> dir_names;
-        for (const auto & address : cluster->getShardsAddresses()[shard_id])
-            if (!address.is_local || !settings.prefer_localhost_replica)
-                dir_names.push_back(address.toFullString(settings.use_compact_format_in_distributed_parts_names));
+    std::vector<std::string> dir_names;
+    for (const auto & address : cluster->getShardsAddresses()[shard_id])
+        if (!address.is_local || !settings.prefer_localhost_replica)
+            dir_names.push_back(address.toFullString(settings.use_compact_format_in_distributed_parts_names));
 
-        if (!dir_names.empty())
-            writeToShard(block, dir_names);
-    }
+    if (!dir_names.empty())
+        writeToShard(block, dir_names);
 }
 
 

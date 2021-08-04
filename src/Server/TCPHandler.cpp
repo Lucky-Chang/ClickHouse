@@ -141,6 +141,12 @@ void TCPHandler::runImpl()
         throw;
     }
 
+    /// When connecting, the default catalog can be specified.
+    ///TODO@json.lrj check catalog exists
+    // if (!default_catalog.empty())
+    // {
+    // }
+
     /// When connecting, the default database can be specified.
     if (!default_database.empty())
     {
@@ -891,6 +897,7 @@ void TCPHandler::receiveHello()
     readVarUInt(client_version_minor, *in);
     // NOTE For backward compatibility of the protocol, client cannot send its version_patch.
     readVarUInt(client_tcp_protocol_version, *in);
+    readStringBinary(default_catalog, *in);
     readStringBinary(default_database, *in);
     readStringBinary(user, *in);
     readStringBinary(password, *in);
@@ -902,6 +909,7 @@ void TCPHandler::receiveHello()
         client_name,
         client_version_major, client_version_minor, client_version_patch,
         client_tcp_protocol_version,
+        (!default_catalog.empty() ? ", catalog: " + default_catalog : ""),
         (!default_database.empty() ? ", database: " + default_database : ""),
         (!user.empty() ? ", user: " + user : "")
     );

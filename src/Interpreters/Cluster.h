@@ -54,7 +54,6 @@ public:
     /// is used to set a limit on the size of the timeout
     static Poco::Timespan saturate(Poco::Timespan v, Poco::Timespan limit);
 
-public:
     using SlotToShard = std::vector<UInt64>;
 
     struct Address
@@ -64,7 +63,7 @@ public:
         * <node>
         *     <host>example01-01-1</host>
         *     <port>9000</port>
-        *     <!-- <user>, <password>, <default_database>, <compression>, <priority>. <secure> if needed -->
+        *     <!-- <user>, <password>, <catalog>, <compression>, <priority>. <secure> if needed -->
         * </node>
         * ...
         * or in <shard> and inside in <replica> elements:
@@ -72,7 +71,7 @@ public:
         *     <replica>
         *         <host>example01-01-1</host>
         *         <port>9000</port>
-        *         <!-- <user>, <password>, <default_database>, <compression>, <priority>. <secure> if needed -->
+        *         <!-- <user>, <password>, <catalog>, <compression>, <priority>. <secure> if needed -->
         *    </replica>
         * </shard>
         */
@@ -89,8 +88,8 @@ public:
         UInt32 shard_index{}; /// shard serial number in configuration file, starting from 1.
         UInt32 replica_index{}; /// replica serial number in this shard, starting from 1; zero means no replicas.
 
-        /// This database is selected when no database is specified for Distributed table
-        String default_database;
+        /// This catalog is selected as default catalog for remote query
+        String default_catalog;
         /// The locality is determined at the initialization, and is not changed even if DNS is changed
         bool is_local = false;
         bool user_specified = false;
@@ -131,7 +130,7 @@ public:
         static std::pair<String, UInt16> fromString(const String & host_port_string);
 
         /// Returns escaped shard{shard_index}_replica{replica_index} or escaped
-        /// user:password@resolved_host_address:resolved_host_port#default_database
+        /// user:password@resolved_host_address:resolved_host_port#catalog
         /// depending on use_compact_format flag
         String toFullString(bool use_compact_format) const;
 
@@ -141,7 +140,7 @@ public:
         /// Returns resolved address if it does resolve.
         std::optional<Poco::Net::SocketAddress> getResolvedAddress() const;
 
-        auto tuple() const { return std::tie(host_name, port, secure, user, password, default_database); }
+        auto tuple() const { return std::tie(host_name, port, secure, user, password, default_catalog); }
         bool operator==(const Address & other) const { return tuple() == other.tuple(); }
 
     private:
@@ -150,38 +149,13 @@ public:
 
     using Addresses = std::vector<Address>;
     using AddressesWithFailover = std::vector<Addresses>;
-
-    /// Name of directory for asynchronous write to StorageDistributed if has_internal_replication
-    ///
-    /// Contains different path for permutations of:
-    /// - prefer_localhost_replica
-    ///   Notes with prefer_localhost_replica==0 will contains local nodes.
-    /// - use_compact_format_in_distributed_parts_names
-    ///   See toFullString()
-    ///
-    /// This is cached to avoid looping by replicas in insertPathForInternalReplication().
-    struct ShardInfoInsertPathForInternalReplication
-    {
-        /// prefer_localhost_replica == 1 && use_compact_format_in_distributed_parts_names=0
-        std::string prefer_localhost_replica;
-        /// prefer_localhost_replica == 0 && use_compact_format_in_distributed_parts_names=0
-        std::string no_prefer_localhost_replica;
-        /// use_compact_format_in_distributed_parts_names=1
-        std::string compact;
-    };
-
+ 
     struct ShardInfo
     {
     public:
         bool isLocal() const { return !local_addresses.empty(); }
         bool hasRemoteConnections() const { return local_addresses.size() != per_replica_pools.size(); }
         size_t getLocalNodeCount() const { return local_addresses.size(); }
-        bool hasInternalReplication() const { return has_internal_replication; }
-        /// Name of directory for asynchronous write to StorageDistributed if has_internal_replication
-        const std::string & insertPathForInternalReplication(bool prefer_localhost_replica, bool use_compact_format) const;
-
-    public:
-        ShardInfoInsertPathForInternalReplication insert_path_for_internal_replication;
         /// Number of the shard, the indexation begins with 1
         UInt32 shard_num = 0;
         UInt32 weight = 1;
@@ -190,7 +164,6 @@ public:
         ConnectionPoolWithFailoverPtr pool;
         /// Connection pool for each replica, contains nullptr for local replicas
         ConnectionPoolPtrs per_replica_pools;
-        bool has_internal_replication = false;
     };
 
     using ShardsInfo = std::vector<ShardInfo>;
@@ -226,10 +199,6 @@ public:
 
     /// Get a new Cluster that contains all servers (all shards with all replicas) from existing cluster as independent shards.
     std::unique_ptr<Cluster> getClusterWithReplicasAsShards(const Settings & settings) const;
-
-    /// Returns false if cluster configuration doesn't allow to use it for cross-replication.
-    /// NOTE: true does not mean, that it's actually a cross-replication cluster.
-    bool maybeCrossReplication() const;
 
 private:
     SlotToShard slot_to_shard;
@@ -283,7 +252,6 @@ public:
 
     void updateClusters(const Poco::Util::AbstractConfiguration & new_config, const Settings & settings, const String & config_prefix, Poco::Util::AbstractConfiguration * old_config = nullptr);
 
-public:
     using Impl = std::map<String, ClusterPtr>;
 
     Impl getContainer() const;

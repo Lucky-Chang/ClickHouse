@@ -159,7 +159,7 @@ private:
 
     /// create directory monitors for each existing subdirectory
     void createDirectoryMonitors(const DiskPtr & disk);
-    /// ensure directory monitor thread and connectoin pool creation by disk and subdirectory name
+    /// ensure directory monitor thread and connection pool creation by disk and subdirectory name
     StorageDistributedDirectoryMonitor & requireDirectoryMonitor(const DiskPtr & disk, const std::string & name, bool startup);
 
     /// Return list of metrics for all created monitors
