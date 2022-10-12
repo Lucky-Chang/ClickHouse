@@ -404,7 +404,7 @@ void DatabaseOnDisk::renameTable(
         /// But this situation (when table in Ordinary database is partially renamed) require manual intervention anyway.
         if (from_ordinary_to_atomic)
         {
-            DatabaseCatalog::instance().addUUIDMapping(create.uuid);
+            getContext()->getDatabaseCatalog().addUUIDMapping(create.uuid);
             if (table->storesDataOnDisk())
                 LOG_INFO(log, "Moving table from {} to {}", table_data_relative_path, to_database.getTableDataPath(create));
         }
@@ -439,7 +439,7 @@ void DatabaseOnDisk::renameTable(
         if (table->storesDataOnDisk())
             atomic_db.tryRemoveSymlink(table_name);
         /// Forget about UUID, now it's possible to reuse it for new table
-        DatabaseCatalog::instance().removeUUIDMappingFinally(prev_uuid);
+        getContext()->getDatabaseCatalog().removeUUIDMappingFinally(prev_uuid);
         atomic_db.setDetachedTableNotInUseForce(prev_uuid);
     }
 }
@@ -479,7 +479,7 @@ ASTPtr DatabaseOnDisk::getCreateDatabaseQuery() const
     auto settings = getContext()->getSettingsRef();
     {
         std::lock_guard lock(mutex);
-        auto database_metadata_path = getContext()->getPath() + "metadata/" + escapeForFileName(database_name) + ".sql";
+        auto database_metadata_path = getContext()->getCatalogPath() + "metadata/" + escapeForFileName(database_name) + ".sql";
         ast = parseQueryFromMetadata(log, getContext(), database_metadata_path, true);
         auto & ast_create_query = ast->as<ASTCreateQuery &>();
         ast_create_query.attach = false;

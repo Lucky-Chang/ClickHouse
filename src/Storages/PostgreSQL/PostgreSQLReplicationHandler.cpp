@@ -339,7 +339,7 @@ ASTPtr PostgreSQLReplicationHandler::getCreateNestedTableQuery(StorageMaterializ
     auto [postgres_table_schema, postgres_table_name] = getSchemaAndTableName(table_name);
     auto table_structure = std::make_unique<PostgreSQLTableStructure>(fetchPostgreSQLTableStructure(tx, postgres_table_name, postgres_table_schema, true, true, true));
 
-    auto table_override = tryGetTableOverride(current_database_name, table_name);
+    auto table_override = tryGetTableOverride(getContext(), current_database_name, table_name);
     return storage->getCreateNestedTableQuery(std::move(table_structure), table_override ? table_override->as<ASTTableOverride>() : nullptr);
 }
 
@@ -363,7 +363,7 @@ StorageInfo PostgreSQLReplicationHandler::loadFromSnapshot(postgres::Connection 
         throw Exception(ErrorCodes::LOGICAL_ERROR, "No table attributes");
     auto table_attributes = table_structure->physical_columns->attributes;
 
-    auto table_override = tryGetTableOverride(current_database_name, table_name);
+    auto table_override = tryGetTableOverride(getContext(), current_database_name, table_name);
     materialized_storage->createNestedIfNeeded(std::move(table_structure), table_override ? table_override->as<ASTTableOverride>() : nullptr);
     auto nested_storage = materialized_storage->getNested();
 
@@ -878,7 +878,7 @@ void PostgreSQLReplicationHandler::addTableToReplication(StorageMaterializedPost
             TemporaryReplicationSlot temporary_slot(this, tx, start_lsn, snapshot_name);
 
             /// Protect against deadlock.
-            auto nested = DatabaseCatalog::instance().tryGetTable(materialized_storage->getNestedStorageID(), materialized_storage->getNestedTableContext());
+            auto nested = getContext()->getDatabaseCatalog().tryGetTable(materialized_storage->getNestedStorageID(), materialized_storage->getNestedTableContext());
             if (!nested)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Internal table was not created");
 
@@ -960,7 +960,7 @@ void PostgreSQLReplicationHandler::reloadFromSnapshot(const std::vector<std::pai
 
             for (const auto & [relation_id, table_name] : relation_data)
             {
-                auto storage = DatabaseCatalog::instance().getTable(StorageID(current_database_name, table_name), getContext());
+                auto storage = getContext()->getDatabaseCatalog().getTable(StorageID(current_database_name, table_name), getContext());
                 auto * materialized_storage = storage->as <StorageMaterializedPostgreSQL>();
                 auto materialized_table_lock = materialized_storage->lockForShare(String(), getContext()->getSettingsRef().lock_acquire_timeout);
 
@@ -992,7 +992,7 @@ void PostgreSQLReplicationHandler::reloadFromSnapshot(const std::vector<std::pai
                 {
                     InterpreterRenameQuery(ast_rename, nested_context).execute();
 
-                    auto nested_storage = DatabaseCatalog::instance().getTable(StorageID(table_id.database_name, table_id.table_name, temp_table_id.uuid), nested_context);
+                    auto nested_storage = getContext()->getDatabaseCatalog().getTable(StorageID(table_id.database_name, table_id.table_name, temp_table_id.uuid), nested_context);
                     materialized_storage->set(nested_storage);
 
                     auto nested_sample_block = nested_storage->getInMemoryMetadataPtr()->getSampleBlock();
@@ -1005,7 +1005,7 @@ void PostgreSQLReplicationHandler::reloadFromSnapshot(const std::vector<std::pai
                     /// Pass pointer to new nested table into replication consumer, remove current table from skip list and set start lsn position.
                     getConsumer()->updateNested(table_name, StorageInfo(nested_storage, std::move(table_attributes)), relation_id, start_lsn);
 
-                    auto table_to_drop = DatabaseCatalog::instance().getTable(StorageID(temp_table_id.database_name, temp_table_id.table_name, table_id.uuid), nested_context);
+                    auto table_to_drop = getContext()->getDatabaseCatalog().getTable(StorageID(temp_table_id.database_name, temp_table_id.table_name, table_id.uuid), nested_context);
                     auto drop_table_id = table_to_drop->getStorageID();
 
                     if (drop_table_id == nested_storage->getStorageID())

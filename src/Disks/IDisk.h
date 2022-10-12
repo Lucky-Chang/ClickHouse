@@ -348,11 +348,11 @@ public:
     ///  Device: 10301h/66305d   Inode: 3109907     Links: 1
     /// Why we have always zero by default? Because normal filesystem
     /// manages hardlinks by itself. So you can always remove hardlink and all
-    /// other alive harlinks will not be removed.
+    /// other alive hardlinks will not be removed.
     virtual UInt32 getRefCount(const String &) const { return 0; }
 
     /// Revision is an incremental counter of disk operation.
-    /// Revision currently exisis only in DiskS3.
+    /// Revision currently exits only in DiskS3.
     /// It is used to save current state during backup and restore that state from backup.
     /// This method sets current disk revision if it lower than required.
     virtual void syncRevision(UInt64) {}
@@ -415,7 +415,7 @@ public:
     /// Changes amount of reserved space.
     virtual void update(UInt64 new_size) = 0;
 
-    /// Unreserves reserved space.
+    /// Unreserve reserved space.
     virtual ~IReservation() = default;
 };
 

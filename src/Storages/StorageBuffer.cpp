@@ -107,7 +107,7 @@ StoragePtr StorageBuffer::getDestinationTable() const
     if (!destination_id)
         return {};
 
-    auto destination = DatabaseCatalog::instance().tryGetTable(destination_id, getContext());
+    auto destination = getContext()->getDatabaseCatalog().tryGetTable(destination_id, getContext());
     if (destination.get() == this)
         throw Exception("Destination table is myself. Will lead to infinite loop.", ErrorCodes::INFINITE_LOOP);
 
@@ -128,7 +128,7 @@ StorageBuffer::StorageBuffer(
     const StorageID & destination_id_,
     bool allow_materialized_)
     : IStorage(table_id_)
-    , WithContext(context_->getBufferContext())
+    , WithContext(context_->getGlobalContext())
     , num_shards(num_shards_)
     , buffers(num_shards_)
     , min_thresholds(min_thresholds_)
@@ -142,7 +142,7 @@ StorageBuffer::StorageBuffer(
     StorageInMemoryMetadata storage_metadata;
     if (columns_.empty())
     {
-        auto dest_table = DatabaseCatalog::instance().getTable(destination_id, context_);
+        auto dest_table = getContext()->getDatabaseCatalog().getTable(destination_id, context_);
         storage_metadata.setColumns(dest_table->getInMemoryMetadataPtr()->getColumns());
     }
     else
@@ -528,7 +528,7 @@ public:
         StoragePtr destination = storage.getDestinationTable();
         if (destination)
         {
-            destination = DatabaseCatalog::instance().tryGetTable(storage.destination_id, storage.getContext());
+            destination = storage.getContext()->getDatabaseCatalog().tryGetTable(storage.destination_id, storage.getContext());
             if (destination.get() == &storage)
                 throw Exception("Destination table is myself. Write will cause infinite loop.", ErrorCodes::INFINITE_LOOP);
         }
@@ -1029,7 +1029,7 @@ void StorageBuffer::alter(const AlterCommands & params, ContextPtr local_context
 
     StorageInMemoryMetadata new_metadata = *metadata_snapshot;
     params.apply(new_metadata, local_context);
-    DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata);
+    getContext()->getDatabaseCatalog().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata);
     setInMemoryMetadata(new_metadata);
 }
 

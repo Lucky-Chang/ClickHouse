@@ -338,7 +338,7 @@ Pipe StorageSystemColumns::read(
         /// Add `database` column.
         MutableColumnPtr database_column_mut = ColumnString::create();
 
-        const auto databases = DatabaseCatalog::instance().getDatabases();
+        const auto databases = context->getDatabaseCatalog().getDatabases();
         for (const auto & [database_name, database] : databases)
         {
             if (database_name == DatabaseCatalog::TEMPORARY_DATABASE)

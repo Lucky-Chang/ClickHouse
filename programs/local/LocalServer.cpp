@@ -528,9 +528,9 @@ void LocalServer::processConfig()
     }
 
     shared_context = Context::createShared();
-    global_context = Context::createGlobal(shared_context.get());
+    global_context = Context::createCatalog(shared_context.get());
 
-    global_context->makeGlobalContext();
+    global_context->makeSystemCatalogContext();
     global_context->setApplicationType(Context::ApplicationType::LOCAL);
 
     tryInitPath();

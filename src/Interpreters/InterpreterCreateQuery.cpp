@@ -1,6 +1,7 @@
 #include <memory>
 
 #include <filesystem>
+#include <optional>
 
 #include "Common/Exception.h"
 #include <Common/StringUtils/StringUtils.h>
@@ -117,10 +118,10 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
 {
     String database_name = create.getDatabase();
 
-    auto guard = DatabaseCatalog::instance().getDDLGuard(database_name, "");
+    auto guard = getContext()->getDatabaseCatalog().getDDLGuard(database_name, "");
 
     /// Database can be created before or it can be created concurrently in another thread, while we were waiting in DDLGuard
-    if (DatabaseCatalog::instance().isDatabaseExist(database_name))
+    if (getContext()->getDatabaseCatalog().isDatabaseExist(database_name))
     {
         if (create.if_not_exists)
             return {};
@@ -130,7 +131,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
 
     /// Will write file with database metadata, if needed.
     String database_name_escaped = escapeForFileName(database_name);
-    fs::path metadata_path = fs::canonical(getContext()->getPath());
+    fs::path metadata_path = fs::canonical(getContext()->getCatalogPath());
     fs::path metadata_file_tmp_path = metadata_path / "metadata" / (database_name_escaped + ".sql.tmp");
     fs::path metadata_file_path = metadata_path / "metadata" / (database_name_escaped + ".sql");
 
@@ -256,10 +257,10 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
 
     /// Lock uuid, so we will known it's already in use.
     /// We do it when attaching databases on server startup (internal) and on CREATE query (!create.attach);
-    TemporaryLockForUUIDDirectory uuid_lock;
+    std::optional<TemporaryLockForUUIDDirectory> uuid_lock;
     if (need_lock_uuid)
-        uuid_lock = TemporaryLockForUUIDDirectory{create.uuid};
-    else if (create.uuid != UUIDHelpers::Nil && !DatabaseCatalog::instance().hasUUIDMapping(create.uuid))
+        uuid_lock = TemporaryLockForUUIDDirectory{create.uuid, getContext()->getDatabaseCatalog()};
+    else if (create.uuid != UUIDHelpers::Nil && !getContext()->getDatabaseCatalog().hasUUIDMapping(create.uuid))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find UUID mapping for {}, it's a bug", create.uuid);
 
     DatabasePtr database = DatabaseFactory::get(create, metadata_path / "", getContext());
@@ -288,14 +289,14 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
     }
 
     /// We attach database before loading it's tables, so do not allow concurrent DDL queries
-    auto db_guard = DatabaseCatalog::instance().getExclusiveDDLGuardForDatabase(database_name);
+    auto db_guard = getContext()->getDatabaseCatalog().getExclusiveDDLGuardForDatabase(database_name);
 
     bool added = false;
     bool renamed = false;
     try
     {
         /// TODO Attach db only after it was loaded. Now it's not possible because of view dependencies
-        DatabaseCatalog::instance().attachDatabase(database_name, database);
+        getContext()->getDatabaseCatalog().attachDatabase(database_name, database);
         added = true;
 
         if (need_write_metadata)
@@ -322,7 +323,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
             assert(removed);
         }
         if (added)
-            DatabaseCatalog::instance().detachDatabase(getContext(), database_name, false, false);
+            getContext()->getDatabaseCatalog().detachDatabase(getContext(), database_name, false, false);
 
         throw;
     }
@@ -690,7 +691,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
     else if (!create.as_table.empty())
     {
         String as_database_name = getContext()->resolveDatabase(create.as_database);
-        StoragePtr as_storage = DatabaseCatalog::instance().getTable({as_database_name, create.as_table}, getContext());
+        StoragePtr as_storage = getContext()->getDatabaseCatalog().getTable({as_database_name, create.as_table}, getContext());
 
         /// as_storage->getColumns() and setEngine(...) must be called under structure lock of other_table for CREATE ... AS other_table.
         as_storage_lock = as_storage->lockForShare(getContext()->getCurrentQueryId(), getContext()->getSettingsRef().lock_acquire_timeout);
@@ -931,7 +932,7 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
         String as_database_name = getContext()->resolveDatabase(create.as_database);
         String as_table_name = create.as_table;
 
-        ASTPtr as_create_ptr = DatabaseCatalog::instance().getDatabase(as_database_name)->getCreateTableQuery(as_table_name, getContext());
+        ASTPtr as_create_ptr = getContext()->getDatabaseCatalog().getDatabase(as_database_name)->getCreateTableQuery(as_table_name, getContext());
         const auto & as_create = as_create_ptr->as<ASTCreateQuery &>();
 
         const String qualified_name = backQuoteIfNeed(as_database_name) + "." + backQuoteIfNeed(as_table_name);
@@ -1039,10 +1040,10 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     // If this is a stub ATTACH query, read the query definition from the database
     if (create.attach && !create.storage && !create.columns_list)
     {
-        auto database = DatabaseCatalog::instance().getDatabase(database_name);
+        auto database = getContext()->getDatabaseCatalog().getDatabase(database_name);
         if (database->shouldReplicateQuery(getContext(), query_ptr))
         {
-            auto guard = DatabaseCatalog::instance().getDDLGuard(database_name, create.getTable());
+            auto guard = getContext()->getDatabaseCatalog().getDDLGuard(database_name, create.getTable());
             create.setDatabase(database_name);
             guard->releaseTableLock();
             return database->tryEnqueueReplicatedDDL(query_ptr, getContext(), internal);
@@ -1053,7 +1054,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 
         /// For short syntax of ATTACH query we have to lock table name here, before reading metadata
         /// and hold it until table is attached
-        ddl_guard = DatabaseCatalog::instance().getDDLGuard(database_name, create.getTable());
+        ddl_guard = getContext()->getDatabaseCatalog().getDDLGuard(database_name, create.getTable());
 
         bool if_not_exists = create.if_not_exists;
 
@@ -1145,7 +1146,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     /// Check type compatible for materialized dest table and select columns
     if (create.select && create.is_materialized_view && create.to_table_id)
     {
-        if (StoragePtr to_table = DatabaseCatalog::instance().tryGetTable(
+        if (StoragePtr to_table = getContext()->getDatabaseCatalog().tryGetTable(
             {create.to_table_id.database_name, create.to_table_id.table_name, create.to_table_id.uuid},
             getContext()
         ))
@@ -1177,12 +1178,12 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     DatabasePtr database;
     bool need_add_to_database = !create.temporary;
     if (need_add_to_database)
-        database = DatabaseCatalog::instance().getDatabase(database_name);
+        database = getContext()->getDatabaseCatalog().getDatabase(database_name);
 
     if (need_add_to_database && database->shouldReplicateQuery(getContext(), query_ptr))
     {
         chassert(!ddl_guard);
-        auto guard = DatabaseCatalog::instance().getDDLGuard(create.getDatabase(), create.getTable());
+        auto guard = getContext()->getDatabaseCatalog().getDDLGuard(create.getDatabase(), create.getTable());
         assertOrSetUUID(create, database);
         guard->releaseTableLock();
         return database->tryEnqueueReplicatedDDL(query_ptr, getContext(), internal);
@@ -1211,7 +1212,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     QualifiedTableName qualified_name{database_name, create.getTable()};
     TableNamesSet loading_dependencies = getDependenciesSetFromCreateQuery(getContext()->getGlobalContext(), qualified_name, query_ptr);
     if (!loading_dependencies.empty())
-        DatabaseCatalog::instance().addLoadingDependencies(qualified_name, std::move(loading_dependencies));
+        getContext()->getDatabaseCatalog().addLoadingDependencies(qualified_name, std::move(loading_dependencies));
 
     return fillTableIfNeeded(create);
 }
@@ -1232,12 +1233,12 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
     }
 
     if (!ddl_guard)
-        ddl_guard = DatabaseCatalog::instance().getDDLGuard(create.getDatabase(), create.getTable());
+        ddl_guard = getContext()->getDatabaseCatalog().getDDLGuard(create.getDatabase(), create.getTable());
 
     String data_path;
     DatabasePtr database;
 
-    database = DatabaseCatalog::instance().getDatabase(create.getDatabase());
+    database = getContext()->getDatabaseCatalog().getDatabase(create.getDatabase());
     assertOrSetUUID(create, database);
 
     String storage_name = create.is_dictionary ? "Dictionary" : "Table";
@@ -1313,10 +1314,10 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
     /// We should lock UUID on CREATE query (because for ATTACH it must be already locked previously).
     /// But ATTACH without create.attach_short_syntax flag works like CREATE actually, that's why we check it.
     bool need_lock_uuid = !create.attach_short_syntax;
-    TemporaryLockForUUIDDirectory uuid_lock;
+    std::optional<TemporaryLockForUUIDDirectory> uuid_lock;
     if (need_lock_uuid)
-        uuid_lock = TemporaryLockForUUIDDirectory{create.uuid};
-    else if (create.uuid != UUIDHelpers::Nil && !DatabaseCatalog::instance().hasUUIDMapping(create.uuid))
+        uuid_lock = TemporaryLockForUUIDDirectory{create.uuid, getContext()->getDatabaseCatalog()};
+    else if (create.uuid != UUIDHelpers::Nil && !getContext()->getDatabaseCatalog().hasUUIDMapping(create.uuid))
     {
         /// FIXME MaterializedPostgreSQL works with UUIDs incorrectly and breaks invariants
         if (database->getEngineName() != "MaterializedPostgreSQL")
@@ -1416,7 +1417,7 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
     String table_to_replace_name = create.getTable();
 
     {
-        auto database = DatabaseCatalog::instance().getDatabase(create.getDatabase());
+        auto database = getContext()->getDatabaseCatalog().getDatabase(create.getDatabase());
         if (database->getUUID() == UUIDHelpers::Nil)
             throw Exception(ErrorCodes::INCORRECT_QUERY,
                             "{} query is supported only for Atomic databases",
@@ -1517,7 +1518,7 @@ BlockIO InterpreterCreateQuery::fillTableIfNeeded(const ASTCreateQuery & create)
         insert->table_id = {create.getDatabase(), create.getTable(), create.uuid};
         if (create.is_window_view)
         {
-            auto table = DatabaseCatalog::instance().getTable(insert->table_id, getContext());
+            auto table = getContext()->getDatabaseCatalog().getTable(insert->table_id, getContext());
             insert->select = typeid_cast<StorageWindowView *>(table.get())->getSourceTableSelectQuery();
         }
         else

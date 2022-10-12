@@ -21,6 +21,7 @@ NamesAndTypesList StorageSystemClusters::getNamesAndTypes()
         {"port", std::make_shared<DataTypeUInt16>()},
         {"is_local", std::make_shared<DataTypeUInt8>()},
         {"user", std::make_shared<DataTypeString>()},
+        {"default_catalog", std::make_shared<DataTypeString>()},
         {"default_database", std::make_shared<DataTypeString>()},
         {"errors_count", std::make_shared<DataTypeUInt32>()},
         {"slowdowns_count", std::make_shared<DataTypeUInt32>()},
@@ -34,7 +35,7 @@ void StorageSystemClusters::fillData(MutableColumns & res_columns, ContextPtr co
     for (const auto & name_and_cluster : context->getClusters()->getContainer())
         writeCluster(res_columns, name_and_cluster);
 
-    const auto databases = DatabaseCatalog::instance().getDatabases();
+    const auto databases = context->getDatabaseCatalog().getDatabases();
     for (const auto & name_and_database : databases)
     {
         if (const auto * replicated = typeid_cast<const DatabaseReplicated *>(name_and_database.second.get()))
@@ -73,6 +74,7 @@ void StorageSystemClusters::writeCluster(MutableColumns & res_columns, const Nam
             res_columns[i++]->insert(address.port);
             res_columns[i++]->insert(address.is_local);
             res_columns[i++]->insert(address.user);
+            res_columns[i++]->insert(address.default_catalog);
             res_columns[i++]->insert(address.default_database);
             res_columns[i++]->insert(pool_status[replica_index].error_count);
             res_columns[i++]->insert(pool_status[replica_index].slowdown_count);

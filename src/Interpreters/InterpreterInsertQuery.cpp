@@ -94,7 +94,7 @@ StoragePtr InterpreterInsertQuery::getTable(ASTInsertQuery & query)
         query.table_id = getContext()->resolveStorageID(local_table_id);
     }
 
-    return DatabaseCatalog::instance().getTable(query.table_id, getContext());
+    return getContext()->getDatabaseCatalog().getTable(query.table_id, getContext());
 }
 
 Block InterpreterInsertQuery::getSampleBlock(

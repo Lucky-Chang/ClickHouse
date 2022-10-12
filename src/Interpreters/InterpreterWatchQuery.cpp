@@ -58,7 +58,7 @@ QueryPipelineBuilder InterpreterWatchQuery::buildQueryPipeline()
     auto table_id = getContext()->resolveStorageID(query, Context::ResolveOrdinary);
 
     /// Get storage
-    storage = DatabaseCatalog::instance().tryGetTable(table_id, getContext());
+    storage = getContext()->getDatabaseCatalog().tryGetTable(table_id, getContext());
 
     if (!storage)
         throw Exception("Table " + table_id.getNameForLogs() + " doesn't exist.",

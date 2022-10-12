@@ -4048,7 +4048,7 @@ Pipe MergeTreeData::alterPartition(
                     case PartitionCommand::MoveDestinationType::TABLE:
                     {
                         String dest_database = query_context->resolveDatabase(command.to_database);
-                        auto dest_storage = DatabaseCatalog::instance().getTable({dest_database, command.to_table}, query_context);
+                        auto dest_storage = getContext()->getDatabaseCatalog().getTable({dest_database, command.to_table}, query_context);
                         movePartitionToTable(dest_storage, command.partition, query_context);
                     }
                     break;
@@ -4071,7 +4071,7 @@ Pipe MergeTreeData::alterPartition(
                 if (command.replace)
                     checkPartitionCanBeDropped(command.partition, query_context);
                 String from_database = query_context->resolveDatabase(command.from_database);
-                auto from_storage = DatabaseCatalog::instance().getTable({from_database, command.from_table}, query_context);
+                auto from_storage = getContext()->getDatabaseCatalog().getTable({from_database, command.from_table}, query_context);
                 replacePartitionFrom(from_storage, command.partition, command.replace, query_context);
             }
             break;
@@ -6342,12 +6342,12 @@ PartitionCommandsResultInfo MergeTreeData::freezePartitionsByMatcher(
     const String & with_name,
     ContextPtr local_context)
 {
-    String clickhouse_path = fs::canonical(local_context->getPath());
-    String default_shadow_path = fs::path(clickhouse_path) / "shadow/";
+    String catalog_path = fs::canonical(local_context->getCatalogPath());
+    String default_shadow_path = fs::path(catalog_path) / "shadow/";
     fs::create_directories(default_shadow_path);
     auto increment = Increment(fs::path(default_shadow_path) / "increment.txt").get(true);
 
-    const String shadow_path = "shadow/";
+    const String shadow_path = getContext()->getCatalogPrefixPath() + "shadow/";
 
     /// Acquire a snapshot of active data parts to prevent removing while doing backup.
     const auto data_parts = getVisibleDataPartsVector(local_context);
@@ -6438,7 +6438,7 @@ bool MergeTreeData::removeDetachedPart(DiskPtr disk, const String & path, const 
 
 PartitionCommandsResultInfo MergeTreeData::unfreezePartitionsByMatcher(MatcherFn matcher, const String & backup_name, ContextPtr local_context)
 {
-    auto backup_path = fs::path("shadow") / escapeForFileName(backup_name) / relative_data_path;
+    auto backup_path = fs::path(local_context->getCatalogPrefixPath() + "shadow") / escapeForFileName(backup_name) / relative_data_path;
 
     LOG_DEBUG(log, "Unfreezing parts by path {}", backup_path.generic_string());
 

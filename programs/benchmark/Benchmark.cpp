@@ -73,7 +73,7 @@ public:
         query_to_execute(query_to_execute_), continue_on_errors(continue_on_errors_), reconnect(reconnect_),
         display_client_side_time(display_client_side_time_),
         print_stacktrace(print_stacktrace_), settings(settings_),
-        shared_context(Context::createShared()), global_context(Context::createGlobal(shared_context.get())),
+        shared_context(Context::createShared()), global_context(Context::createCatalog(shared_context.get())),
         pool(concurrency)
     {
         const auto secure = secure_ ? Protocol::Secure::Enable : Protocol::Secure::Disable;
@@ -105,7 +105,7 @@ public:
             }
         }
 
-        global_context->makeGlobalContext();
+        global_context->makeSystemCatalogContext();
         global_context->setSettings(settings);
 
         std::cerr << std::fixed << std::setprecision(3);

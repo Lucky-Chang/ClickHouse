@@ -84,7 +84,7 @@ void ReadBufferFromRemoteFSGather::appendFilesystemCacheLog()
         .read_from_cache_attempted = false,
     };
 
-    if (auto cache_log = Context::getGlobalContextInstance()->getFilesystemCacheLog())
+    if (auto cache_log = Context::getSystemCatalogContextInstance()->getFilesystemCacheLog())
         cache_log->add(elem);
 }
 

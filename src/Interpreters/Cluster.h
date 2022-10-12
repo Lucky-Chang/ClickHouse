@@ -318,7 +318,7 @@ protected:
     /// setup outside of this class, stored to prevent deleting from impl on config update
     std::unordered_set<std::string> automatic_clusters;
 
-    MultiVersion<Macros>::Version macros_;
+    MultiVersion<Macros>::Version macros;
 
     Impl impl;
     mutable std::mutex mutex;

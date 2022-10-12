@@ -119,7 +119,7 @@ ColumnPtr FunctionHasColumnInTable::executeImpl(const ColumnsWithTypeAndName & a
         // FIXME this (probably) needs a non-constant access to query context,
         // because it might initialized a storage. Ideally, the tables required
         // by the query should be initialized at an earlier stage.
-        const StoragePtr & table = DatabaseCatalog::instance().getTable(
+        const StoragePtr & table = getContext()->getDatabaseCatalog().getTable(
             {database_name, table_name},
             const_pointer_cast<Context>(getContext()));
         auto table_metadata = table->getInMemoryMetadataPtr();

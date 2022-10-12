@@ -25,7 +25,7 @@ ActionLocksManager::ActionLocksManager(ContextPtr context_) : WithContext(contex
 
 void ActionLocksManager::add(const StorageID & table_id, StorageActionBlockType action_type)
 {
-    if (auto table = DatabaseCatalog::instance().tryGetTable(table_id, getContext()))
+    if (auto table = getContext()->getDatabaseCatalog().tryGetTable(table_id, getContext()))
         add(table, action_type);
 }
 
@@ -42,7 +42,7 @@ void ActionLocksManager::add(const StoragePtr & table, StorageActionBlockType ac
 
 void ActionLocksManager::remove(const StorageID & table_id, StorageActionBlockType action_type)
 {
-    if (auto table = DatabaseCatalog::instance().tryGetTable(table_id, getContext()))
+    if (auto table = getContext()->getDatabaseCatalog().tryGetTable(table_id, getContext()))
         remove(table, action_type);
 }
 

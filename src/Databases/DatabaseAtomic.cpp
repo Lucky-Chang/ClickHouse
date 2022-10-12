@@ -39,13 +39,13 @@ public:
 };
 
 DatabaseAtomic::DatabaseAtomic(String name_, String metadata_path_, UUID uuid, const String & logger_name, ContextPtr context_)
-    : DatabaseOrdinary(name_, metadata_path_, "store/", logger_name, context_)
-    , path_to_table_symlinks(fs::path(getContext()->getPath()) / "data" / escapeForFileName(name_) / "")
-    , path_to_metadata_symlink(fs::path(getContext()->getPath()) / "metadata" / escapeForFileName(name_))
+    : DatabaseOrdinary(name_, metadata_path_, context_->getCatalogPrefixPath() + "store/", logger_name, context_)
+    , path_to_table_symlinks(fs::path(getContext()->getCatalogPath()) / "data" / escapeForFileName(name_) / "")
+    , path_to_metadata_symlink(fs::path(getContext()->getCatalogPath()) / "metadata" / escapeForFileName(name_))
     , db_uuid(uuid)
 {
     assert(db_uuid != UUIDHelpers::Nil);
-    fs::create_directories(fs::path(getContext()->getPath()) / "metadata");
+    fs::create_directories(fs::path(getContext()->getCatalogPath()) / "metadata");
     fs::create_directories(path_to_table_symlinks);
     tryCreateMetadataSymlink();
 }
@@ -131,7 +131,7 @@ void DatabaseAtomic::dropTableImpl(ContextPtr local_context, const String & tabl
     {
         std::lock_guard lock(mutex);
         table = getTableUnlocked(table_name);
-        table_metadata_path_drop = DatabaseCatalog::instance().getPathForDroppedMetadata(table->getStorageID());
+        table_metadata_path_drop = getContext()->getDatabaseCatalog().getPathForDroppedMetadata(table->getStorageID());
         auto txn = local_context->getZooKeeperMetadataTransaction();
         if (txn && !local_context->isInternalSubquery())
             txn->commit();      /// Commit point (a sort of) for Replicated database
@@ -152,7 +152,7 @@ void DatabaseAtomic::dropTableImpl(ContextPtr local_context, const String & tabl
 
     /// Notify DatabaseCatalog that table was dropped. It will remove table data in background.
     /// Cleanup is performed outside of database to allow easily DROP DATABASE without waiting for cleanup to complete.
-    DatabaseCatalog::instance().enqueueDroppedTableCleanup(table->getStorageID(), table, table_metadata_path_drop, sync);
+    getContext()->getDatabaseCatalog().enqueueDroppedTableCleanup(table->getStorageID(), table, table_metadata_path_drop, sync);
 }
 
 void DatabaseAtomic::renameTable(ContextPtr local_context, const String & table_name, IDatabase & to_database,
@@ -284,9 +284,9 @@ void DatabaseAtomic::renameTable(ContextPtr local_context, const String & table_
 
     if (!inside_database)
     {
-        DatabaseCatalog::instance().updateUUIDMapping(old_table_id.uuid, other_db.shared_from_this(), table);
+        getContext()->getDatabaseCatalog().updateUUIDMapping(old_table_id.uuid, other_db.shared_from_this(), table);
         if (exchange)
-            DatabaseCatalog::instance().updateUUIDMapping(other_table->getStorageID().uuid, shared_from_this(), other_table);
+            getContext()->getDatabaseCatalog().updateUUIDMapping(other_table->getStorageID().uuid, shared_from_this(), other_table);
     }
 
     attach(other_db, to_table_name, table_data_path, table);
@@ -309,7 +309,7 @@ void DatabaseAtomic::commitCreateTable(const ASTCreateQuery & query, const Stora
         /// Do some checks before renaming file from .tmp to .sql
         not_in_use = cleanupDetachedTables();
         assertDetachedTableNotInUse(query.uuid);
-        chassert(DatabaseCatalog::instance().hasUUIDMapping(query.uuid));
+        chassert(getContext()->getDatabaseCatalog().hasUUIDMapping(query.uuid));
 
         auto txn = query_context->getZooKeeperMetadataTransaction();
         if (txn && !query_context->isInternalSubquery())
@@ -526,7 +526,7 @@ void DatabaseAtomic::renameDatabase(ContextPtr query_context, const String & new
     {
         std::lock_guard lock(mutex);
         for (auto & table : tables)
-            DatabaseCatalog::instance().checkTableCanBeRemovedOrRenamed({database_name, table.first});
+            getContext()->getDatabaseCatalog().checkTableCanBeRemovedOrRenamed({database_name, table.first});
     }
 
     try
@@ -539,8 +539,8 @@ void DatabaseAtomic::renameDatabase(ContextPtr query_context, const String & new
     }
 
     auto new_name_escaped = escapeForFileName(new_name);
-    auto old_database_metadata_path = getContext()->getPath() + "metadata/" + escapeForFileName(getDatabaseName()) + ".sql";
-    auto new_database_metadata_path = getContext()->getPath() + "metadata/" + new_name_escaped + ".sql";
+    auto old_database_metadata_path = getContext()->getCatalogPath() + "metadata/" + escapeForFileName(getDatabaseName()) + ".sql";
+    auto new_database_metadata_path = getContext()->getCatalogPath() + "metadata/" + new_name_escaped + ".sql";
     renameNoReplace(old_database_metadata_path, new_database_metadata_path);
 
     String old_path_to_table_symlinks;
@@ -552,7 +552,7 @@ void DatabaseAtomic::renameDatabase(ContextPtr query_context, const String & new
             table_names.reserve(tables.size());
             for (auto & table : tables)
                 table_names.push_back(table.first);
-            DatabaseCatalog::instance().updateDatabaseName(database_name, new_name, table_names);
+            getContext()->getDatabaseCatalog().updateDatabaseName(database_name, new_name, table_names);
         }
         database_name = new_name;
 
@@ -563,9 +563,9 @@ void DatabaseAtomic::renameDatabase(ContextPtr query_context, const String & new
             table.second->renameInMemory(table_id);
         }
 
-        path_to_metadata_symlink = getContext()->getPath() + "metadata/" + new_name_escaped;
+        path_to_metadata_symlink = getContext()->getCatalogPath() + "metadata/" + new_name_escaped;
         old_path_to_table_symlinks = path_to_table_symlinks;
-        path_to_table_symlinks = getContext()->getPath() + "data/" + new_name_escaped + "/";
+        path_to_table_symlinks = getContext()->getCatalogPath() + "data/" + new_name_escaped + "/";
     }
 
     fs::rename(old_path_to_table_symlinks, path_to_table_symlinks);

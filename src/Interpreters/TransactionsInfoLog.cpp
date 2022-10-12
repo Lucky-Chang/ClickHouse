@@ -93,7 +93,7 @@ void tryWriteEventToSystemLog(Poco::Logger * log,
                               const TransactionInfoContext & context)
 try
 {
-    auto system_log =  Context::getGlobalContextInstance()->getTransactionsInfoLog();
+    auto system_log =  Context::getSystemCatalogContextInstance()->getTransactionsInfoLog();
     if (!system_log)
         return;
 

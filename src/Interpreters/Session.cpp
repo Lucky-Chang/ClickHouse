@@ -246,7 +246,7 @@ void Session::shutdownNamedSessions()
 
 Session::Session(const ContextPtr & global_context_, ClientInfo::Interface interface_, bool is_secure)
     : auth_id(UUIDHelpers::generateV4()),
-      global_context(global_context_),
+      global_context(global_context_->getDefaultCatalogContextInstance()),
       log(&Poco::Logger::get(String{magic_enum::enum_name(interface_)} + "-Session"))
 {
     prepared_client_info.emplace();

@@ -40,7 +40,7 @@ BlockIO InterpreterCheckQuery::execute()
     auto table_id = getContext()->resolveStorageID(check, Context::ResolveOrdinary);
 
     getContext()->checkAccess(AccessType::SHOW_TABLES, table_id);
-    StoragePtr table = DatabaseCatalog::instance().getTable(table_id, getContext());
+    StoragePtr table = getContext()->getDatabaseCatalog().getTable(table_id, getContext());
     auto check_results = table->checkData(query_ptr, getContext());
 
     Block block;

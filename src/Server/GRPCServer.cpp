@@ -1075,7 +1075,7 @@ namespace
                 StoragePtr storage;
                 if (auto resolved = query_context->tryResolveStorageID(temporary_id, Context::ResolveExternal))
                 {
-                    storage = DatabaseCatalog::instance().getTable(resolved, query_context);
+                    storage = query_context->getDatabaseCatalog().getTable(resolved, query_context);
                 }
                 else
                 {

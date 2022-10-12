@@ -9,9 +9,9 @@ struct ContextHolder
 
     ContextHolder()
         : shared_context(DB::Context::createShared())
-        , context(DB::Context::createGlobal(shared_context.get()))
+        , context(DB::Context::createCatalog(shared_context.get()))
     {
-        context->makeGlobalContext();
+        context->makeSystemCatalogContext();
         context->setPath("./");
     }
 

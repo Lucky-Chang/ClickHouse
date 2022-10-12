@@ -29,7 +29,7 @@ static constexpr UInt64 operator""_GiB(unsigned long long value)
 
 /** List of settings: type, name, default value, description, flags
   *
-  * This looks rather unconvenient. It is done that way to avoid repeating settings in different places.
+  * This looks rather inconvenient. It is done that way to avoid repeating settings in different places.
   * Note: as an alternative, we could implement settings to be completely dynamic in form of map: String -> Field,
   *  but we are not going to do it, because settings is used everywhere as static struct fields.
   *
@@ -40,6 +40,9 @@ static constexpr UInt64 operator""_GiB(unsigned long long value)
   * consider adding them to settings changes history in SettingsChangesHistory.h for special `compatibility` setting
   * to work correctly.
   */
+#define ALIYUN_SETTINGS(M) \
+    /** Settings patched by aliyun clickhouse. */ \
+    M(Bool, optimize_cross_catalog_query, 0, "Optimize cross catalog query, not using network connections", 0) \
 
 #define COMMON_SETTINGS(M) \
     M(Dialect, dialect, Dialect::clickhouse, "Which SQL dialect will be used to parse query", 0)\
@@ -838,6 +841,7 @@ static constexpr UInt64 operator""_GiB(unsigned long long value)
 // Please add settings non-related to formats into the COMMON_SETTINGS above.
 
 #define LIST_OF_SETTINGS(M)    \
+    ALIYUN_SETTINGS(M)         \
     COMMON_SETTINGS(M)         \
     OBSOLETE_SETTINGS(M)       \
     FORMAT_FACTORY_SETTINGS(M)

@@ -535,14 +535,14 @@ bool StorageNATS::isSubjectInSubscriptions(const std::string & subject)
 bool StorageNATS::checkDependencies(const StorageID & table_id)
 {
     // Check if all dependencies are attached
-    auto dependencies = DatabaseCatalog::instance().getDependencies(table_id);
+    auto dependencies = getContext()->getDatabaseCatalog().getDependencies(table_id);
     if (dependencies.empty())
         return true;
 
     // Check the dependencies are ready?
     for (const auto & db_tab : dependencies)
     {
-        auto table = DatabaseCatalog::instance().tryGetTable(db_tab, getContext());
+        auto table = getContext()->getDatabaseCatalog().tryGetTable(db_tab, getContext());
         if (!table)
             return false;
 
@@ -568,7 +568,7 @@ void StorageNATS::streamingToViewsFunc()
         auto table_id = getStorageID();
 
         // Check if at least one direct dependency is attached
-        size_t dependencies_count = DatabaseCatalog::instance().getDependencies(table_id).size();
+        size_t dependencies_count = getContext()->getDatabaseCatalog().getDependencies(table_id).size();
         bool nats_connected = connection->isConnected() || connection->reconnect();
 
         if (dependencies_count && nats_connected)
@@ -617,7 +617,7 @@ void StorageNATS::streamingToViewsFunc()
 bool StorageNATS::streamToViews()
 {
     auto table_id = getStorageID();
-    auto table = DatabaseCatalog::instance().getTable(table_id, getContext());
+    auto table = getContext()->getDatabaseCatalog().getTable(table_id, getContext());
     if (!table)
         throw Exception("Engine table " + table_id.getNameForLogs() + " doesn't exist.", ErrorCodes::LOGICAL_ERROR);
 

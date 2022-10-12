@@ -10,6 +10,7 @@ namespace DB
 
 BlockIO InterpreterUseQuery::execute()
 {
+    /// TODO@json.lrj add use catalog syntax
     const String & new_database = query_ptr->as<ASTUseQuery &>().database;
     getContext()->checkAccess(AccessType::SHOW_DATABASES, new_database);
     getContext()->getSessionContext()->setCurrentDatabase(new_database);

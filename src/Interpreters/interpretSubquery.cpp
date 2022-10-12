@@ -96,7 +96,7 @@ std::shared_ptr<InterpreterSelectWithUnionQuery> interpretSubquery(
         else
         {
             auto table_id = context->resolveStorageID(table_expression);
-            const auto & storage = DatabaseCatalog::instance().getTable(table_id, context);
+            const auto & storage = context->getDatabaseCatalog().getTable(table_id, context);
             columns = storage->getInMemoryMetadataPtr()->getColumns().getOrdinary();
             select_query->replaceDatabaseAndTable(table_id);
         }

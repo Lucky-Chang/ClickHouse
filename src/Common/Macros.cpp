@@ -147,6 +147,10 @@ String Macros::getValue(const String & key) const
     throw Exception("No macro " + key + " in config", ErrorCodes::SYNTAX_ERROR);
 }
 
+void Macros::setValue(const String & key, const String & value)
+{
+    macros[key] = value;
+}
 
 String Macros::expand(const String & s) const
 {

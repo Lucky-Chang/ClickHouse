@@ -455,7 +455,7 @@ ASTs InterpreterCreateImpl::getRewrittenQueries(
         if (table_like->compound() && table_like->getTableId().database_name != mysql_database)
             return {};
         String table_name = table_like->shortName();
-        ASTPtr rewritten_create_ast = DatabaseCatalog::instance().getDatabase(mapped_to_database)->getCreateTableQuery(table_name, context);
+        ASTPtr rewritten_create_ast = context->getDatabaseCatalog().getDatabase(mapped_to_database)->getCreateTableQuery(table_name, context);
         auto * create_ptr = rewritten_create_ast->as<ASTCreateQuery>();
         create_ptr->setDatabase(mapped_to_database);
         create_ptr->setTable(create_query.table);
@@ -527,7 +527,7 @@ ASTs InterpreterCreateImpl::getRewrittenQueries(
     rewritten_query->set(rewritten_query->storage, storage);
     rewritten_query->set(rewritten_query->columns_list, columns);
 
-    if (auto override_ast = tryGetTableOverride(mapped_to_database, create_query.table))
+    if (auto override_ast = tryGetTableOverride(context, mapped_to_database, create_query.table))
     {
         const auto & override = override_ast->as<const ASTTableOverride &>();
         applyTableOverrideToCreateQuery(override, rewritten_query.get());
@@ -643,7 +643,7 @@ ASTs InterpreterAlterImpl::getRewrittenQueries(
 
                 if (default_after_column.empty())
                 {
-                    StoragePtr storage = DatabaseCatalog::instance().getTable({mapped_to_database, alter_query.table}, context);
+                    StoragePtr storage = context->getDatabaseCatalog().getTable({mapped_to_database, alter_query.table}, context);
                     Block storage_header = storage->getInMemoryMetadataPtr()->getSampleBlock();
 
                     /// Put the sign and version columns last

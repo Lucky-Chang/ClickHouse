@@ -165,7 +165,7 @@ void InterpreterSystemQuery::startStopAction(StorageActionBlockType action_type,
     else if (table_id)
     {
         access->checkAccess(required_access_type, table_id.database_name, table_id.table_name);
-        auto table = DatabaseCatalog::instance().tryGetTable(table_id, getContext());
+        auto table = getContext()->getDatabaseCatalog().tryGetTable(table_id, getContext());
         if (table)
         {
             if (start)
@@ -179,7 +179,7 @@ void InterpreterSystemQuery::startStopAction(StorageActionBlockType action_type,
     }
     else
     {
-        for (auto & elem : DatabaseCatalog::instance().getDatabases())
+        for (auto & elem : getContext()->getDatabaseCatalog().getDatabases())
         {
             startStopActionInDatabase(action_type, start, elem.first, elem.second, getContext(), log);
         }
@@ -556,7 +556,7 @@ void InterpreterSystemQuery::restoreReplica()
 {
     getContext()->checkAccess(AccessType::SYSTEM_RESTORE_REPLICA, table_id);
 
-    const StoragePtr table_ptr = DatabaseCatalog::instance().getTable(table_id, getContext());
+    const StoragePtr table_ptr = getContext()->getDatabaseCatalog().getTable(table_id, getContext());
 
     auto * const table_replicated_ptr = dynamic_cast<StorageReplicatedMergeTree *>(table_ptr.get());
 
@@ -569,10 +569,10 @@ void InterpreterSystemQuery::restoreReplica()
 StoragePtr InterpreterSystemQuery::tryRestartReplica(const StorageID & replica, ContextMutablePtr system_context, bool need_ddl_guard)
 {
     auto table_ddl_guard = need_ddl_guard
-        ? DatabaseCatalog::instance().getDDLGuard(replica.getDatabaseName(), replica.getTableName())
+        ? getContext()->getDatabaseCatalog().getDDLGuard(replica.getDatabaseName(), replica.getTableName())
         : nullptr;
 
-    auto [database, table] = DatabaseCatalog::instance().tryGetDatabaseAndTable(replica, getContext());
+    auto [database, table] = getContext()->getDatabaseCatalog().tryGetDatabaseAndTable(replica, getContext());
     ASTPtr create_ast;
 
     /// Detach actions
@@ -624,7 +624,7 @@ void InterpreterSystemQuery::restartReplica(const StorageID & replica, ContextMu
 void InterpreterSystemQuery::restartReplicas(ContextMutablePtr system_context)
 {
     std::vector<StorageID> replica_names;
-    auto & catalog = DatabaseCatalog::instance();
+    auto & catalog = getContext()->getDatabaseCatalog();
 
     auto access = getContext()->getAccess();
     bool access_is_granted_globally = access->isGranted(AccessType::SYSTEM_RESTART_REPLICA);
@@ -674,7 +674,7 @@ void InterpreterSystemQuery::dropReplica(ASTSystemQuery & query)
     if (!table_id.empty())
     {
         getContext()->checkAccess(AccessType::SYSTEM_DROP_REPLICA, table_id);
-        StoragePtr table = DatabaseCatalog::instance().getTable(table_id, getContext());
+        StoragePtr table = getContext()->getDatabaseCatalog().getTable(table_id, getContext());
 
         if (!dropReplicaImpl(query, table))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, table_is_not_replicated.data(), table_id.getNameForLogs());
@@ -682,14 +682,14 @@ void InterpreterSystemQuery::dropReplica(ASTSystemQuery & query)
     else if (query.database)
     {
         getContext()->checkAccess(AccessType::SYSTEM_DROP_REPLICA, query.getDatabase());
-        DatabasePtr database = DatabaseCatalog::instance().getDatabase(query.getDatabase());
+        DatabasePtr database = getContext()->getDatabaseCatalog().getDatabase(query.getDatabase());
         for (auto iterator = database->getTablesIterator(getContext()); iterator->isValid(); iterator->next())
             dropReplicaImpl(query, iterator->table());
         LOG_TRACE(log, "Dropped replica {} from database {}", query.replica, backQuoteIfNeed(database->getDatabaseName()));
     }
     else if (query.is_drop_whole_replica)
     {
-        auto databases = DatabaseCatalog::instance().getDatabases();
+        auto databases = getContext()->getDatabaseCatalog().getDatabases();
         auto access = getContext()->getAccess();
         bool access_is_granted_globally = access->isGranted(AccessType::SYSTEM_DROP_REPLICA);
 
@@ -714,7 +714,7 @@ void InterpreterSystemQuery::dropReplica(ASTSystemQuery & query)
         String remote_replica_path = fs::path(query.replica_zk_path)  / "replicas" / query.replica;
 
         /// This check is actually redundant, but it may prevent from some user mistakes
-        for (auto & elem : DatabaseCatalog::instance().getDatabases())
+        for (auto & elem : getContext()->getDatabaseCatalog().getDatabases())
         {
             DatabasePtr & database = elem.second;
             for (auto iterator = database->getTablesIterator(getContext()); iterator->isValid(); iterator->next())
@@ -782,7 +782,7 @@ bool InterpreterSystemQuery::dropReplicaImpl(ASTSystemQuery & query, const Stora
 void InterpreterSystemQuery::syncReplica(ASTSystemQuery &)
 {
     getContext()->checkAccess(AccessType::SYSTEM_SYNC_REPLICA, table_id);
-    StoragePtr table = DatabaseCatalog::instance().getTable(table_id, getContext());
+    StoragePtr table = getContext()->getDatabaseCatalog().getTable(table_id, getContext());
 
     if (auto * storage_replicated = dynamic_cast<StorageReplicatedMergeTree *>(table.get()))
     {
@@ -803,8 +803,8 @@ void InterpreterSystemQuery::syncReplica(ASTSystemQuery &)
 void InterpreterSystemQuery::syncReplicatedDatabase(ASTSystemQuery & query)
 {
     const auto database_name = query.getDatabase();
-    auto guard = DatabaseCatalog::instance().getDDLGuard(database_name, "");
-    auto database = DatabaseCatalog::instance().getDatabase(database_name);
+    auto guard = getContext()->getDatabaseCatalog().getDDLGuard(database_name, "");
+    auto database = getContext()->getDatabaseCatalog().getDatabase(database_name);
 
     if (auto * ptr = typeid_cast<DatabaseReplicated *>(database.get()))
     {
@@ -832,7 +832,7 @@ void InterpreterSystemQuery::flushDistributed(ASTSystemQuery &)
 {
     getContext()->checkAccess(AccessType::SYSTEM_FLUSH_DISTRIBUTED, table_id);
 
-    if (auto * storage_distributed = dynamic_cast<StorageDistributed *>(DatabaseCatalog::instance().getTable(table_id, getContext()).get()))
+    if (auto * storage_distributed = dynamic_cast<StorageDistributed *>(getContext()->getDatabaseCatalog().getTable(table_id, getContext()).get()))
         storage_distributed->flushClusterNodesAllData(getContext());
     else
         throw Exception("Table " + table_id.getNameForLogs() + " is not distributed", ErrorCodes::BAD_ARGUMENTS);

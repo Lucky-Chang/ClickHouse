@@ -238,7 +238,7 @@ StoragePtr DatabaseWithOwnTablesBase::detachTableUnlocked(const String & table_n
     if (table_id.hasUUID())
     {
         assert(database_name == DatabaseCatalog::TEMPORARY_DATABASE || getUUID() != UUIDHelpers::Nil);
-        DatabaseCatalog::instance().removeUUIDMapping(table_id.uuid);
+        getContext()->getDatabaseCatalog().removeUUIDMapping(table_id.uuid);
     }
 
     return res;
@@ -260,13 +260,13 @@ void DatabaseWithOwnTablesBase::attachTableUnlocked(const String & table_name, c
     if (table_id.hasUUID())
     {
         assert(database_name == DatabaseCatalog::TEMPORARY_DATABASE || getUUID() != UUIDHelpers::Nil);
-        DatabaseCatalog::instance().addUUIDMapping(table_id.uuid, shared_from_this(), table);
+        getContext()->getDatabaseCatalog().addUUIDMapping(table_id.uuid, shared_from_this(), table);
     }
 
     if (!tables.emplace(table_name, table).second)
     {
         if (table_id.hasUUID())
-            DatabaseCatalog::instance().removeUUIDMapping(table_id.uuid);
+            getContext()->getDatabaseCatalog().removeUUIDMapping(table_id.uuid);
         throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS, "Table {} already exists.", table_id.getFullTableName());
     }
 }
@@ -294,7 +294,7 @@ void DatabaseWithOwnTablesBase::shutdown()
         if (table_id.hasUUID())
         {
             assert(getDatabaseName() == DatabaseCatalog::TEMPORARY_DATABASE || getUUID() != UUIDHelpers::Nil);
-            DatabaseCatalog::instance().removeUUIDMapping(table_id.uuid);
+            getContext()->getDatabaseCatalog().removeUUIDMapping(table_id.uuid);
         }
     }
 

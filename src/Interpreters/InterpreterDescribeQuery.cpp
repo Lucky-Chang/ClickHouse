@@ -85,7 +85,7 @@ BlockIO InterpreterDescribeQuery::execute()
     {
         auto table_id = getContext()->resolveStorageID(table_expression.database_and_table_name);
         getContext()->checkAccess(AccessType::SHOW_COLUMNS, table_id);
-        auto table = DatabaseCatalog::instance().getTable(table_id, getContext());
+        auto table = getContext()->getDatabaseCatalog().getTable(table_id, getContext());
         auto table_lock = table->lockForShare(getContext()->getInitialQueryId(), settings.lock_acquire_timeout);
 
         auto metadata_snapshot = table->getInMemoryMetadataPtr();

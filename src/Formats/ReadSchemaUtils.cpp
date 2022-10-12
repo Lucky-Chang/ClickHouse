@@ -177,7 +177,7 @@ ColumnsDescription readSchemaFromFormat(
         const auto & insertion_table = context->getInsertionTable();
         if (!schema_reader->hasStrictOrderOfColumns() && !insertion_table.empty())
         {
-            auto storage = DatabaseCatalog::instance().getTable(insertion_table, context);
+            auto storage = context->getDatabaseCatalog().getTable(insertion_table, context);
             auto metadata = storage->getInMemoryMetadataPtr();
             auto names_in_storage = metadata->getColumns().getNamesOfPhysical();
             auto ordered_list = getOrderedColumnsList(names_and_types, names_in_storage);

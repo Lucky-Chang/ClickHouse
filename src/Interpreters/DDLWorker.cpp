@@ -594,6 +594,7 @@ void DDLWorker::processTask(DDLTaskBase & task, const ZooKeeperPtr & zookeeper)
                 if (query_with_table->table)
                 {
                     /// It's not CREATE DATABASE
+                    /// TODO@json.lrj fix this
                     auto table_id = context->tryResolveStorageID(*query_with_table, Context::ResolveOrdinary);
                     storage = DatabaseCatalog::instance().tryGetTable(table_id, context);
                 }
@@ -753,6 +754,7 @@ bool DDLWorker::tryExecuteQueryOnLeaderReplica(
 
         // Should return as soon as possible if the table is dropped.
         bool replica_dropped = replicated_storage->is_dropped;
+        /// TODO@json.lrj
         bool all_replicas_likely_detached = status.active_replicas == 0 && !DatabaseCatalog::instance().isTableExist(replicated_storage->getStorageID(), context);
         if (replica_dropped || all_replicas_likely_detached)
         {

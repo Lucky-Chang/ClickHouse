@@ -433,7 +433,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         {
             if (table.table.table.empty())
                 continue;
-            auto maybe_storage = DatabaseCatalog::instance().tryGetTable({table.table.database, table.table.table}, context);
+            auto maybe_storage = context->getDatabaseCatalog().tryGetTable({table.table.database, table.table.table}, context);
             if (!maybe_storage)
                 continue;
             checkStorageSupportsTransactionsIfNeeded(storage, context);

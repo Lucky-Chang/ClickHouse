@@ -141,8 +141,8 @@ BlockIO Unfreezer::systemUnfreeze(const String & backup_name)
     {
         disks.push_back(disk);
     }
-    auto backup_path = fs::path(backup_directory_prefix) / escapeForFileName(backup_name);
-    auto store_paths = {backup_path / "store", backup_path / "data"};
+    auto backup_path = fs::path(local_context->getCatalogPrefixPath()) / backup_directory_prefix / escapeForFileName(backup_name);
+    auto store_paths = { backup_path / local_context->getCatalogPrefixPath() / "store", backup_path / local_context->getCatalogPrefixPath() / "data" };
 
     PartitionCommandsResultInfo result_info;
 

@@ -35,15 +35,15 @@ BlockIO InterpreterDropIndexQuery::execute()
     auto table_id = current_context->resolveStorageID(drop_index, Context::ResolveOrdinary);
     query_ptr->as<ASTDropIndexQuery &>().setDatabase(table_id.database_name);
 
-    DatabasePtr database = DatabaseCatalog::instance().getDatabase(table_id.database_name);
+    DatabasePtr database = getContext()->getDatabaseCatalog().getDatabase(table_id.database_name);
     if (database->shouldReplicateQuery(getContext(), query_ptr))
     {
-        auto guard = DatabaseCatalog::instance().getDDLGuard(table_id.database_name, table_id.table_name);
+        auto guard = getContext()->getDatabaseCatalog().getDDLGuard(table_id.database_name, table_id.table_name);
         guard->releaseTableLock();
         return database->tryEnqueueReplicatedDDL(query_ptr, current_context);
     }
 
-    StoragePtr table = DatabaseCatalog::instance().getTable(table_id, current_context);
+    StoragePtr table = getContext()->getDatabaseCatalog().getTable(table_id, current_context);
     if (table->isStaticStorage())
         throw Exception(ErrorCodes::TABLE_IS_READ_ONLY, "Table is read-only");
 

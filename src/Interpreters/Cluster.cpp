@@ -288,9 +288,9 @@ Cluster::Address Cluster::Address::fromFullString(const String & full_string)
 
 /// Implementation of Clusters class
 
-Clusters::Clusters(const Poco::Util::AbstractConfiguration & config, const Settings & settings, MultiVersion<Macros>::Version macros, const String & config_prefix)
+Clusters::Clusters(const Poco::Util::AbstractConfiguration & config, const Settings & settings, MultiVersion<Macros>::Version _macros, const String & config_prefix)
 {
-    this->macros_ = macros;
+    this->macros = _macros;
     updateClusters(config, settings, config_prefix);
 }
 
@@ -299,7 +299,7 @@ ClusterPtr Clusters::getCluster(const std::string & cluster_name) const
 {
     std::lock_guard lock(mutex);
 
-    auto expanded_cluster_name = macros_->expand(cluster_name);
+    auto expanded_cluster_name = macros->expand(cluster_name);
     auto it = impl.find(expanded_cluster_name);
     return (it != impl.end()) ? it->second : nullptr;
 }

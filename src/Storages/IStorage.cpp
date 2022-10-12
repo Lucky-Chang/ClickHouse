@@ -166,7 +166,7 @@ void IStorage::alter(const AlterCommands & params, ContextPtr context, AlterLock
     auto table_id = getStorageID();
     StorageInMemoryMetadata new_metadata = getInMemoryMetadata();
     params.apply(new_metadata, context);
-    DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(context, table_id, new_metadata);
+    context->getDatabaseCatalog().getDatabase(table_id.database_name)->alterTable(context, table_id, new_metadata);
     setInMemoryMetadata(new_metadata);
 }
 
@@ -220,10 +220,10 @@ Names IStorage::getAllRegisteredNames() const
 NameDependencies IStorage::getDependentViewsByColumn(ContextPtr context) const
 {
     NameDependencies name_deps;
-    auto dependencies = DatabaseCatalog::instance().getDependencies(storage_id);
+    auto dependencies = context->getDatabaseCatalog().getDependencies(storage_id);
     for (const auto & depend_id : dependencies)
     {
-        auto depend_table = DatabaseCatalog::instance().getTable(depend_id, context);
+        auto depend_table = context->getDatabaseCatalog().getTable(depend_id, context);
         if (depend_table->getInMemoryMetadataPtr()->select.inner_query)
         {
             const auto & select_query = depend_table->getInMemoryMetadataPtr()->select.inner_query;

@@ -340,7 +340,7 @@ void RestorerFromBackup::findTableInBackup(const QualifiedTableName & table_name
 
     TableInfo & res_table_info = table_infos[table_name];
     res_table_info.create_table_query = create_table_query;
-    res_table_info.is_predefined_table = DatabaseCatalog::instance().isPredefinedTable(StorageID{table_name.database, table_name.table});
+    res_table_info.is_predefined_table = context->getDatabaseCatalog().isPredefinedTable(StorageID{table_name.database, table_name.table});
     res_table_info.dependencies = getDependenciesSetFromCreateQuery(context->getGlobalContext(), table_name, create_table_query);
     res_table_info.has_data = backup->hasFiles(data_path_in_backup);
     res_table_info.data_path_in_backup = data_path_in_backup;
@@ -595,7 +595,7 @@ void RestorerFromBackup::checkDatabase(const String & database_name)
     auto & database_info = database_infos.at(database_name);
     try
     {
-        DatabasePtr database = DatabaseCatalog::instance().getDatabase(database_name);
+        DatabasePtr database = context->getDatabaseCatalog().getDatabase(database_name);
         database_info.database = database;
 
         if (!restore_settings.allow_different_database_def && !database_info.is_predefined_database)
@@ -662,7 +662,7 @@ void RestorerFromBackup::createTable(const QualifiedTableName & table_name)
 
     try
     {
-        DatabasePtr database = DatabaseCatalog::instance().getDatabase(table_name.database);
+        DatabasePtr database = context->getDatabaseCatalog().getDatabase(table_name.database);
         table_info.database = database;
 
         /// Execute CREATE TABLE query (we call IDatabase::createTableRestoredFromBackup() to allow the database to do some
@@ -689,7 +689,7 @@ void RestorerFromBackup::checkTable(const QualifiedTableName & table_name)
     {
         if (!database)
         {
-            database = DatabaseCatalog::instance().getDatabase(table_name.database);
+            database = context->getDatabaseCatalog().getDatabase(table_name.database);
             table_info.database = database;
         }
 

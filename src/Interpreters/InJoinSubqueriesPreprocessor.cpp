@@ -30,7 +30,7 @@ StoragePtr tryGetTable(const ASTPtr & database_and_table, ContextPtr context)
     auto table_id = context->tryResolveStorageID(database_and_table);
     if (!table_id)
         return {};
-    return DatabaseCatalog::instance().tryGetTable(table_id, context);
+    return context->getDatabaseCatalog().tryGetTable(table_id, context);
 }
 
 using CheckShardsAndTables = InJoinSubqueriesPreprocessor::CheckShardsAndTables;

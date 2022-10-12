@@ -9,13 +9,18 @@
 
 #include <boost/noncopyable.hpp>
 #include <Poco/Logger.h>
+#include "base/types.h"
+#include <Parsers/IAST.h>
+#include <Storages/LiveView/TemporaryLiveViewCleaner.h>
 
 #include <array>
 #include <condition_variable>
+#include <functional>
 #include <list>
 #include <map>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <set>
 #include <shared_mutex>
 #include <unordered_map>
@@ -135,9 +140,10 @@ public:
     /// Returns true if a passed name is one of the predefined databases' names.
     static bool isPredefinedDatabase(std::string_view database_name);
 
-    static DatabaseCatalog & init(ContextMutablePtr global_context_);
-    static DatabaseCatalog & instance();
+    static DatabaseCatalog & init(ContextMutablePtr global_context_, const String & catalog_name_ = "");
+    static DatabaseCatalog & instance(const String & catalog_name_ = "");
     static void shutdown();
+    static Strings getDatabaseCatalogNames();
 
     void initializeAndLoadTemporaryDatabase();
     void loadDatabases();
@@ -233,13 +239,26 @@ public:
 
     void updateLoadingDependencies(const StorageID & table_id, TableNamesSet && new_dependencies);
 
+    String getCatalogPrefixPath() const;
+    TemporaryLiveViewCleaner & getTemporaryLiveViewCleaner() const
+    {
+        return temporary_live_view_cleaner.get();
+    }
+
 private:
     // The global instance of database catalog. unique_ptr is to allow
     // deferred initialization. Thought I'd use std::optional, but I can't
     // make emplace(global_context_) compile with private constructor ¯\_(ツ)_/¯.
-    static std::unique_ptr<DatabaseCatalog> database_catalog;
+    static std::map<String, std::unique_ptr<DatabaseCatalog>> database_catalogs;
+    static std::mutex catalogs_mutex;
+    static String getNameForLogs(const String & catalog_name)
+    {
+        return "DatabaseCatalog" + (catalog_name.empty() ? "" : "(" + backQuoteIfNeed(catalog_name) + ")");
+    }
+    std::reference_wrapper<TemporaryLiveViewCleaner> temporary_live_view_cleaner;
+    String catalog_prefix_path;
 
-    explicit DatabaseCatalog(ContextMutablePtr global_context_);
+    explicit DatabaseCatalog(ContextMutablePtr global_context_, TemporaryLiveViewCleaner & cleaner, const String & catalog_name_ = "");
     void assertDatabaseExistsUnlocked(const String & database_name) const TSA_REQUIRES(databases_mutex);
     void assertDatabaseDoesntExistUnlocked(const String & database_name) const TSA_REQUIRES(databases_mutex);
 
@@ -329,9 +348,10 @@ private:
 class TemporaryLockForUUIDDirectory : private boost::noncopyable
 {
     UUID uuid = UUIDHelpers::Nil;
+    std::reference_wrapper<DatabaseCatalog> catalog;
 public:
-    TemporaryLockForUUIDDirectory() = default;
-    TemporaryLockForUUIDDirectory(UUID uuid_);
+    TemporaryLockForUUIDDirectory() = delete;
+    TemporaryLockForUUIDDirectory(UUID uuid_, DatabaseCatalog & catalog_);
     ~TemporaryLockForUUIDDirectory();
 
     TemporaryLockForUUIDDirectory(TemporaryLockForUUIDDirectory && rhs) noexcept;

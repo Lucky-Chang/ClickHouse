@@ -74,7 +74,7 @@ static ColumnPtr getFilteredDatabases(const SelectQueryInfo & query_info, Contex
 {
     MutableColumnPtr column = ColumnString::create();
 
-    const auto databases = DatabaseCatalog::instance().getDatabases();
+    const auto databases = context->getDatabaseCatalog().getDatabases();
     for (const auto & database_name : databases | boost::adaptors::map_keys)
     {
         if (database_name == DatabaseCatalog::TEMPORARY_DATABASE)
@@ -95,7 +95,7 @@ static ColumnPtr getFilteredTables(const ASTPtr & query, const ColumnPtr & filte
     for (size_t database_idx = 0; database_idx < filtered_databases_column->size(); ++database_idx)
     {
         const auto & database_name = filtered_databases_column->getDataAt(database_idx).toString();
-        DatabasePtr database = DatabaseCatalog::instance().tryGetDatabase(database_name);
+        DatabasePtr database = context->getDatabaseCatalog().tryGetDatabase(database_name);
         if (!database)
             continue;
 
@@ -168,7 +168,7 @@ protected:
             while (database_idx < databases->size() && (!tables_it || !tables_it->isValid()))
             {
                 database_name = databases->getDataAt(database_idx).toString();
-                database = DatabaseCatalog::instance().tryGetDatabase(database_name);
+                database = context->getDatabaseCatalog().tryGetDatabase(database_name);
 
                 if (!database)
                 {
@@ -235,7 +235,7 @@ protected:
                         // create_table_query
                         if (columns_mask[src_index++])
                         {
-                            auto temp_db = DatabaseCatalog::instance().getDatabaseForTemporaryTables();
+                            auto temp_db = context->getDatabaseCatalog().getDatabaseForTemporaryTables();
                             ASTPtr ast = temp_db ? temp_db->tryGetCreateTableQuery(table.second->getStorageID().getTableName(), context) : nullptr;
                             res_columns[res_index++]->insert(ast ? queryToString(ast) : "");
                         }
@@ -360,7 +360,7 @@ protected:
                     Array dependencies_database_name_array;
                     if (columns_mask[src_index] || columns_mask[src_index + 1])
                     {
-                        const auto dependencies = DatabaseCatalog::instance().getDependencies(StorageID(database_name, table_name));
+                        const auto dependencies = context->getDatabaseCatalog().getDependencies(StorageID(database_name, table_name));
 
                         dependencies_table_name_array.reserve(dependencies.size());
                         dependencies_database_name_array.reserve(dependencies.size());
@@ -521,7 +521,7 @@ protected:
 
                 if (columns_mask[src_index] || columns_mask[src_index + 1] || columns_mask[src_index + 2] || columns_mask[src_index + 3])
                 {
-                    DependenciesInfo info = DatabaseCatalog::instance().getLoadingDependenciesInfo({database_name, table_name});
+                    DependenciesInfo info = context->getDatabaseCatalog().getLoadingDependenciesInfo({database_name, table_name});
 
                     Array loading_dependencies_databases;
                     Array loading_dependencies_tables;

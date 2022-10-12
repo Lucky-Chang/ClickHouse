@@ -4,6 +4,8 @@
 #include <Common/ThreadPool.h>
 
 #include <chrono>
+#include <map>
+#include <mutex>
 
 
 namespace DB
@@ -17,13 +19,12 @@ struct StorageID;
 class TemporaryLiveViewCleaner : WithMutableContext
 {
 public:
-    static TemporaryLiveViewCleaner & instance() { return *the_instance; }
 
     /// Drops a specified live view after a while if it's temporary.
     void addView(const std::shared_ptr<StorageLiveView> & view);
 
-    /// Should be called once.
-    static void init(ContextMutablePtr global_context_);
+    /// Should be called once per catalog.
+    static TemporaryLiveViewCleaner & init(ContextMutablePtr global_context_, const String & user_catalog_name_);
     static void shutdown();
 
     void startup();
@@ -45,7 +46,8 @@ private:
         bool operator <(const StorageAndTimeOfCheck & other) const { return time_of_check < other.time_of_check; }
     };
 
-    static std::unique_ptr<TemporaryLiveViewCleaner> the_instance;
+    static std::map<String, std::unique_ptr<TemporaryLiveViewCleaner>> cleaners;
+    static std::mutex cleaners_mutex;
     std::mutex mutex;
     std::vector<StorageAndTimeOfCheck> views;
     ThreadFromGlobalPool background_thread;

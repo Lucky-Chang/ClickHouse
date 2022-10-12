@@ -53,6 +53,7 @@
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/loadMetadata.h>
+#include <Interpreters/UserDefinedCatalog.h>
 #include <Interpreters/UserDefinedSQLObjectsLoader.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
 #include <Access/AccessControl.h>
@@ -686,9 +687,9 @@ int Server::main(const std::vector<std::string> & /*args*/)
       *  settings, available functions, data types, aggregate functions, databases, ...
       */
     auto shared_context = Context::createShared();
-    global_context = Context::createGlobal(shared_context.get());
+    global_context = Context::createCatalog(shared_context.get());
 
-    global_context->makeGlobalContext();
+    global_context->makeSystemCatalogContext();
     global_context->setApplicationType(Context::ApplicationType::SERVER);
 
 #if !defined(NDEBUG) || !defined(__OPTIMIZE__)
@@ -1250,6 +1251,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
             if (!initial_loading)
             {
+                global_context->setDefaultCatalog(config->getString("default_catalog", ""));
                 /// We do not load ZooKeeper configuration on the first config loading
                 /// because TestKeeper server is not started yet.
                 if (config->has("zookeeper"))
@@ -1525,6 +1527,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
         /** Explicitly destroy Context. It is more convenient than in destructor of Server, because logger is still available.
           * At this moment, no one could own shared part of Context.
           */
+        catalog_contexts.clear();
         global_context.reset();
         shared_context.reset();
         LOG_DEBUG(log, "Destroyed global context.");
@@ -1553,7 +1556,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
     /// Set current database name before loading tables and databases because
     /// system logs may copy global context.
-    global_context->setCurrentDatabaseNameInGlobalContext(default_database);
+    global_context->setCurrentDatabaseNameInSystemCatalogContext(default_database);
 
     LOG_INFO(log, "Loading user defined objects from {}", path_str);
     try
@@ -1567,11 +1570,14 @@ int Server::main(const std::vector<std::string> & /*args*/)
     }
     LOG_DEBUG(log, "Loaded user defined objects");
 
+    global_context->setUserDefinedCatalogsConfig(config(), "user_catalogs");
+    LOG_DEBUG(log, "Loaded user defined catalogs");
+
     LOG_INFO(log, "Loading metadata from {}", path_str);
 
     try
     {
-        auto & database_catalog = DatabaseCatalog::instance();
+        auto & database_catalog = global_context->getDatabaseCatalog();
         /// We load temporary database first, because projections need it.
         database_catalog.initializeAndLoadTemporaryDatabase();
         loadMetadataSystem(global_context);
@@ -1600,7 +1606,50 @@ int Server::main(const std::vector<std::string> & /*args*/)
         tryLogCurrentException(log, "Caught exception while loading metadata");
         throw;
     }
+
+    {
+        auto user_defined_catalogs = global_context->getUserDefinedCatalogs();
+        for (auto && user_catalog_name : user_defined_catalogs->getUserDefinedCatalogNames())
+        {
+            auto user_defined_catalog = user_defined_catalogs->getUserDefinedCatalog(user_catalog_name);
+            auto catalog_path = path / user_defined_catalog->getCatalogPrefixPath();
+            auto catalog_default_database = user_defined_catalog->getDefaultDatabase();
+
+            LOG_INFO(log, "Loading metadata from {}", catalog_path.c_str());
+            fs::create_directories(catalog_path / "data/");
+            fs::create_directories(catalog_path / "metadata/");
+            /// Directory with metadata of tables, which was marked as dropped by Atomic database
+            fs::create_directories(catalog_path / "metadata_dropped/");
+            auto catalog_context = Context::createCopy(global_context);
+            catalog_context->makeUserCatalogContext(user_catalog_name);
+            catalog_context->setCurrentDatabaseNameInUserCatalogContext(catalog_default_database);
+            catalog_contexts.emplace(user_catalog_name, catalog_context);
+
+            try
+            {
+                auto & database_catalog = catalog_context->getDatabaseCatalog();
+                database_catalog.initializeAndLoadTemporaryDatabase();
+                loadMetadataSystem(catalog_context);
+                /// TODO@json.lrj attach system log logical view cross catalog
+                /// TODO@json.lrj attach async metric logical view cross catalog
+                attachSystemTablesServer(catalog_context, *database_catalog.getSystemDatabase(), has_zookeeper);
+                attachInformationSchema(catalog_context, *database_catalog.getDatabase(DatabaseCatalog::INFORMATION_SCHEMA));
+                attachInformationSchema(catalog_context, *database_catalog.getDatabase(DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE));
+                database_catalog.loadMarkedAsDroppedTables();
+
+                loadMetadata(catalog_context, catalog_default_database);
+                database_catalog.loadDatabases();
+                database_catalog.assertDatabaseExists(catalog_default_database);
+            }
+            catch (...)
+            {
+                tryLogCurrentException(log, "Caught exception while loading metadata");
+                throw;
+            }
+        }
+    }
     LOG_DEBUG(log, "Loaded metadata.");
+    global_context->setDefaultCatalog(config().getString("default_catalog", ""));
 
     /// Init trace collector only after trace_log system table was created
     /// Disable it if we collect test coverage information, because it will work extremely slow.
@@ -1679,7 +1728,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
 #endif
 
     {
-        attachSystemTablesAsync(global_context, *DatabaseCatalog::instance().getSystemDatabase(), async_metrics);
+        attachSystemTablesAsync(global_context, *global_context->getDatabaseCatalog().getSystemDatabase(), async_metrics);
 
         {
             std::lock_guard lock(servers_lock);

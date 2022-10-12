@@ -471,7 +471,7 @@ void StorageWindowView::alter(
     create_interpreter.setInternal(true);
     create_interpreter.execute();
 
-    DatabaseCatalog::instance().addDependency(select_table_id, table_id);
+    getContext()->getDatabaseCatalog().addDependency(select_table_id, table_id);
 
     shutdown_called = false;
 
@@ -483,7 +483,7 @@ void StorageWindowView::alter(
 
     new_metadata.setSelectQuery(new_select);
 
-    DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata);
+    getContext()->getDatabaseCatalog().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata);
     setInMemoryMetadata(new_metadata);
 
     startup();
@@ -1565,7 +1565,7 @@ void StorageWindowView::writeIntoWindowView(
 
 void StorageWindowView::startup()
 {
-    DatabaseCatalog::instance().addDependency(select_table_id, getStorageID());
+    getContext()->getDatabaseCatalog().addDependency(select_table_id, getStorageID());
 
     fire_task->activate();
     clean_cache_task->activate();
@@ -1585,13 +1585,13 @@ void StorageWindowView::shutdown()
     fire_task->deactivate();
 
     auto table_id = getStorageID();
-    DatabaseCatalog::instance().removeDependency(select_table_id, table_id);
+    getContext()->getDatabaseCatalog().removeDependency(select_table_id, table_id);
 }
 
 void StorageWindowView::checkTableCanBeDropped() const
 {
     auto table_id = getStorageID();
-    Dependencies dependencies = DatabaseCatalog::instance().getDependencies(table_id);
+    Dependencies dependencies = getContext()->getDatabaseCatalog().getDependencies(table_id);
     if (!dependencies.empty())
     {
         StorageID dependent_table_id = dependencies.front();
@@ -1644,17 +1644,17 @@ const Block & StorageWindowView::getOutputHeader() const
 
 StoragePtr StorageWindowView::getSourceTable() const
 {
-    return DatabaseCatalog::instance().getTable(select_table_id, getContext());
+    return getContext()->getDatabaseCatalog().getTable(select_table_id, getContext());
 }
 
 StoragePtr StorageWindowView::getInnerTable() const
 {
-    return DatabaseCatalog::instance().getTable(inner_table_id, getContext());
+    return getContext()->getDatabaseCatalog().getTable(inner_table_id, getContext());
 }
 
 StoragePtr StorageWindowView::getTargetTable() const
 {
-    return DatabaseCatalog::instance().getTable(target_table_id, getContext());
+    return getContext()->getDatabaseCatalog().getTable(target_table_id, getContext());
 }
 
 void registerStorageWindowView(StorageFactory & factory)

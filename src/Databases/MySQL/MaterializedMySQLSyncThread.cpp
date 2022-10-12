@@ -243,7 +243,7 @@ void MaterializedMySQLSyncThread::synchronization()
     try
     {
         MaterializeMetadata metadata(
-            DatabaseCatalog::instance().getDatabase(database_name)->getMetadataPath() + "/.metadata", getContext()->getSettingsRef());
+            getContext()->getDatabaseCatalog().getDatabase(database_name)->getMetadataPath() + "/.metadata", getContext()->getSettingsRef());
         bool need_reconnect = true;
 
         Stopwatch watch;
@@ -339,8 +339,8 @@ static inline void cleanOutdatedTables(const String & database_name, ContextPtr 
     String cleaning_table_name;
     try
     {
-        auto ddl_guard = DatabaseCatalog::instance().getDDLGuard(database_name, "");
-        const DatabasePtr & clean_database = DatabaseCatalog::instance().getDatabase(database_name);
+        auto ddl_guard = context->getDatabaseCatalog().getDDLGuard(database_name, "");
+        const DatabasePtr & clean_database = context->getDatabaseCatalog().getDatabase(database_name);
 
         for (auto iterator = clean_database->getTablesIterator(context); iterator->isValid(); iterator->next())
         {
@@ -362,7 +362,7 @@ static inline void cleanOutdatedTables(const String & database_name, ContextPtr 
 static inline QueryPipeline
 getTableOutput(const String & database_name, const String & table_name, ContextMutablePtr query_context, bool insert_materialized = false)
 {
-    const StoragePtr & storage = DatabaseCatalog::instance().getTable(StorageID(database_name, table_name), query_context);
+    const StoragePtr & storage = query_context->getDatabaseCatalog().getTable(StorageID(database_name, table_name), query_context);
 
     WriteBufferFromOwnString insert_columns_str;
     const StorageInMemoryMetadata & storage_metadata = storage->getInMemoryMetadata();
@@ -896,7 +896,7 @@ void MaterializedMySQLSyncThread::executeDDLAtomic(const QueryEvent & query_even
 
 void MaterializedMySQLSyncThread::setSynchronizationThreadException(const std::exception_ptr & exception)
 {
-    assert_cast<DatabaseMaterializedMySQL *>(DatabaseCatalog::instance().getDatabase(database_name).get())->setException(exception);
+    assert_cast<DatabaseMaterializedMySQL *>(getContext()->getDatabaseCatalog().getDatabase(database_name).get())->setException(exception);
 }
 
 void MaterializedMySQLSyncThread::Buffers::add(size_t block_rows, size_t block_bytes, size_t written_rows, size_t written_bytes)
@@ -949,7 +949,7 @@ MaterializedMySQLSyncThread::Buffers::BufferAndSortingColumnsPtr MaterializedMyS
     const auto & iterator = data.find(table_name);
     if (iterator == data.end())
     {
-        StoragePtr storage = DatabaseCatalog::instance().getTable(StorageID(database, table_name), context);
+        StoragePtr storage = context->getDatabaseCatalog().getTable(StorageID(database, table_name), context);
 
         const StorageInMemoryMetadata & metadata = storage->getInMemoryMetadata();
         BufferAndSortingColumnsPtr & buffer_and_soring_columns = data.try_emplace(

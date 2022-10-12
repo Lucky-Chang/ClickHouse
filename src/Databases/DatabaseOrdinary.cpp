@@ -70,7 +70,7 @@ namespace
 
 
 DatabaseOrdinary::DatabaseOrdinary(const String & name_, const String & metadata_path_, ContextPtr context_)
-    : DatabaseOrdinary(name_, metadata_path_, "data/" + escapeForFileName(name_) + "/", "DatabaseOrdinary (" + name_ + ")", context_)
+    : DatabaseOrdinary(name_, metadata_path_, context_->getCatalogPrefixPath() + "data/" + escapeForFileName(name_) + "/", "DatabaseOrdinary (" + name_ + ")", context_)
 {
 }
 
@@ -185,9 +185,9 @@ void DatabaseOrdinary::loadTablesMetadata(ContextPtr local_context, ParsedTables
                     if (is_startup)
                     {
                         /// Server is starting up. Lock UUID used by permanently detached table.
-                        DatabaseCatalog::instance().addUUIDMapping(create_query->uuid);
+                        getContext()->getDatabaseCatalog().addUUIDMapping(create_query->uuid);
                     }
-                    else if (!DatabaseCatalog::instance().hasUUIDMapping(create_query->uuid))
+                    else if (!getContext()->getDatabaseCatalog().hasUUIDMapping(create_query->uuid))
                     {
                         /// It's ATTACH DATABASE. UUID for permanently detached table must be already locked.
                         /// FIXME MaterializedPostgreSQL works with UUIDs incorrectly and breaks invariants
@@ -322,7 +322,7 @@ void DatabaseOrdinary::alterTable(ContextPtr local_context, const StorageID & ta
     }
 
     TableNamesSet new_dependencies = getDependenciesSetFromCreateQuery(local_context->getGlobalContext(), table_id.getQualifiedName(), ast);
-    DatabaseCatalog::instance().updateLoadingDependencies(table_id, std::move(new_dependencies));
+    getContext()->getDatabaseCatalog().updateLoadingDependencies(table_id, std::move(new_dependencies));
 
     commitAlterTable(table_id, table_metadata_tmp_path, table_metadata_path, statement, local_context);
 }

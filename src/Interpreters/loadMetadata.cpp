@@ -110,7 +110,7 @@ static void loadDatabase(
 static void checkUnsupportedVersion(ContextMutablePtr context, const String & database_name)
 {
     /// Produce better exception message
-    String metadata_path = context->getPath() + "metadata/" + database_name;
+    String metadata_path = context->getCatalogPath() + "metadata/" + database_name;
     if (fs::exists(fs::path(metadata_path)))
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Data directory for {} database exists, but metadata file does not. "
                                                      "Probably you are trying to upgrade from version older than 20.7. "
@@ -121,7 +121,7 @@ void loadMetadata(ContextMutablePtr context, const String & default_database_nam
 {
     Poco::Logger * log = &Poco::Logger::get("loadMetadata");
 
-    String path = context->getPath() + "metadata";
+    String path = context->getCatalogPath() + "metadata";
 
     /** There may exist 'force_restore_data' file, that means,
       *  skip safety threshold on difference of data parts while initializing tables.
@@ -182,7 +182,7 @@ void loadMetadata(ContextMutablePtr context, const String & default_database_nam
     for (const auto & [name, db_path] : databases)
     {
         loadDatabase(context, name, db_path, has_force_restore_data_flag);
-        loaded_databases.insert({name, DatabaseCatalog::instance().getDatabase(name)});
+        loaded_databases.insert({name, context->getDatabaseCatalog().getDatabase(name)});
     }
 
     auto mode = getLoadingStrictnessLevel(/* attach */ true, /* force_attach */ true, has_force_restore_data_flag);
@@ -205,7 +205,7 @@ void loadMetadata(ContextMutablePtr context, const String & default_database_nam
 
 static void loadSystemDatabaseImpl(ContextMutablePtr context, const String & database_name, const String & default_engine)
 {
-    String path = context->getPath() + "metadata/" + database_name;
+    String path = context->getCatalogPath() + "metadata/" + database_name;
     String metadata_file = path + ".sql";
     if (fs::exists(fs::path(metadata_file)))
     {
@@ -239,7 +239,7 @@ static void convertOrdinaryDatabaseToAtomic(Poco::Logger * log, ContextMutablePt
     auto res = executeQuery(create_database_query, context, true);
     executeTrivialBlockIO(res, context);
     res = {};
-    auto tmp_database = DatabaseCatalog::instance().getDatabase(tmp_name);
+    auto tmp_database = context->getDatabaseCatalog().getDatabase(tmp_name);
     assert(tmp_database->getEngineName() == "Atomic");
 
     size_t num_tables = 0;
@@ -305,7 +305,7 @@ static void maybeConvertOrdinaryDatabaseToAtomic(ContextMutablePtr context, cons
 {
     Poco::Logger * log = &Poco::Logger::get("loadMetadata");
 
-    auto database = DatabaseCatalog::instance().getDatabase(database_name);
+    auto database = context->getDatabaseCatalog().getDatabase(database_name);
     if (!database)
     {
         LOG_WARNING(log, "Database {} not found (while trying to convert it from Ordinary to Atomic)", database_name);
@@ -354,7 +354,7 @@ static void maybeConvertOrdinaryDatabaseToAtomic(ContextMutablePtr context, cons
         for (const auto & action : actions_to_stop)
             InterpreterSystemQuery::startStopActionInDatabase(action, /* start */ true, database_name, database, context, log);
 
-        auto new_database = DatabaseCatalog::instance().getDatabase(database_name);
+        auto new_database = context->getDatabaseCatalog().getDatabase(database_name);
         UUID db_uuid = new_database->getUUID();
         std::vector<UUID> tables_uuids;
         for (auto iterator = new_database->getTablesIterator(context); iterator->isValid(); iterator->next())
@@ -368,17 +368,17 @@ static void maybeConvertOrdinaryDatabaseToAtomic(ContextMutablePtr context, cons
 
         /// Unlock UUID mapping, because it will be locked again on database reload.
         /// It's safe to do during metadata loading, because cleanup task is not started yet.
-        DatabaseCatalog::instance().removeUUIDMappingFinally(db_uuid);
+        context->getDatabaseCatalog().removeUUIDMappingFinally(db_uuid);
         for (const auto & uuid : tables_uuids)
-            DatabaseCatalog::instance().removeUUIDMappingFinally(uuid);
+            context->getDatabaseCatalog().removeUUIDMappingFinally(uuid);
 
-        String path = context->getPath() + "metadata/" + escapeForFileName(database_name);
+        String path = context->getCatalogPath() + "metadata/" + escapeForFileName(database_name);
         /// force_restore_data is needed to re-create metadata symlinks
         loadDatabase(context, database_name, path, /* force_restore_data */ true);
 
         TablesLoader::Databases databases =
         {
-            {database_name, DatabaseCatalog::instance().getDatabase(database_name)},
+            {database_name, context->getDatabaseCatalog().getDatabase(database_name)},
         };
         TablesLoader loader{context, databases, LoadingStrictnessLevel::FORCE_RESTORE};
         loader.loadTables();
@@ -416,7 +416,7 @@ void convertDatabasesEnginesIfNeed(ContextMutablePtr context)
                                                  "will try to convert all Ordinary databases to Atomic");
     fs::remove(convert_flag_path);
 
-    for (const auto & [name, _] : DatabaseCatalog::instance().getDatabases())
+    for (const auto & [name, _] : context->getDatabaseCatalog().getDatabases())
         if (name != DatabaseCatalog::SYSTEM_DATABASE)
             maybeConvertOrdinaryDatabaseToAtomic(context, name, /* tables_started */ true);
 }

@@ -5,7 +5,7 @@
 namespace DB
 {
 
-/** Implements the system table `asynhronous_inserts`,
+/** Implements the system table `asynchronous_inserts`,
  *  which contains information about pending asynchronous inserts in queue.
 */
 class StorageSystemAsynchronousInserts final : public IStorageSystemOneBlock<StorageSystemAsynchronousInserts>

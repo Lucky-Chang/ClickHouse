@@ -126,8 +126,8 @@ void ClusterCopierApp::mainImpl()
         if (is_status_mode)
         {
             SharedContextHolder shared_context = Context::createShared();
-            auto context = Context::createGlobal(shared_context.get());
-            context->makeGlobalContext();
+            auto context = Context::createCatalog(shared_context.get());
+            context->makeSystemCatalogContext();
             SCOPE_EXIT_SAFE(context->shutdown());
 
             auto zookeeper = context->getZooKeeper();
@@ -147,8 +147,8 @@ void ClusterCopierApp::mainImpl()
     LOG_INFO(log, "Starting clickhouse-copier (id {}, host_id {}, path {}, revision {})", process_id, host_id, process_path, ClickHouseRevision::getVersionRevision());
 
     SharedContextHolder shared_context = Context::createShared();
-    auto context = Context::createGlobal(shared_context.get());
-    context->makeGlobalContext();
+    auto context = Context::createCatalog(shared_context.get());
+    context->makeSystemCatalogContext();
     SCOPE_EXIT_SAFE(context->shutdown());
 
     context->setConfig(loaded_config.configuration);

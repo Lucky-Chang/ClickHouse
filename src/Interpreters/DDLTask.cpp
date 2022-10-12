@@ -481,6 +481,7 @@ void ZooKeeperMetadataTransaction::commit()
 
 ClusterPtr tryGetReplicatedDatabaseCluster(const String & cluster_name)
 {
+    /// TODO@json.lrj
     if (const auto * replicated_db = dynamic_cast<const DatabaseReplicated *>(DatabaseCatalog::instance().tryGetDatabase(cluster_name).get()))
         return replicated_db->tryGetCluster();
     return {};

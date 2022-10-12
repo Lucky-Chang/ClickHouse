@@ -136,7 +136,10 @@ void attachSystemTablesLocal(ContextPtr context, IDatabase & system_database)
     attach<StorageSystemBackups>(context, system_database, "backups");
     attach<StorageSystemSchemaInferenceCache>(context, system_database, "schema_inference_cache");
 #ifdef OS_LINUX
-    attach<StorageSystemStackTrace>(context, system_database, "stack_trace");
+    if (context->getCatalogPath() == context->getPath())
+    {
+        attach<StorageSystemStackTrace>(context, system_database, "stack_trace");
+    }
 #endif
 #if USE_ROCKSDB
     attach<StorageSystemRocksDB>(context, system_database, "rocksdb");

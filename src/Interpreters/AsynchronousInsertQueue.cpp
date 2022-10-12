@@ -435,7 +435,7 @@ try
     std::shared_ptr<ISimpleTransform> adding_defaults_transform;
     if (insert_context->getSettingsRef().input_format_defaults_for_omitted_fields && insert_query.table_id)
     {
-        StoragePtr storage = DatabaseCatalog::instance().getTable(insert_query.table_id, insert_context);
+        StoragePtr storage = insert_context->getDatabaseCatalog().getTable(insert_query.table_id, insert_context);
         auto metadata_snapshot = storage->getInMemoryMetadataPtr();
         const auto & columns = metadata_snapshot->getColumns();
         if (columns.hasDefaults())

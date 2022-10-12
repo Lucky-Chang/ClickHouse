@@ -24,7 +24,7 @@ namespace ErrorCodes
 
 DatabaseMemory::DatabaseMemory(const String & name_, ContextPtr context_)
     : DatabaseWithOwnTablesBase(name_, "DatabaseMemory(" + name_ + ")", context_)
-    , data_path("data/" + escapeForFileName(database_name) + "/")
+    , data_path(context_->getCatalogPrefixPath() + "data/" + escapeForFileName(database_name) + "/")
 {}
 
 void DatabaseMemory::createTable(
@@ -89,7 +89,7 @@ void DatabaseMemory::dropTable(
     create_queries.erase(table_name);
     UUID table_uuid = table->getStorageID().uuid;
     if (table_uuid != UUIDHelpers::Nil)
-        DatabaseCatalog::instance().removeUUIDMappingFinally(table_uuid);
+        getContext()->getDatabaseCatalog().removeUUIDMappingFinally(table_uuid);
 }
 
 ASTPtr DatabaseMemory::getCreateDatabaseQuery() const
@@ -143,7 +143,7 @@ void DatabaseMemory::alterTable(ContextPtr local_context, const StorageID & tabl
 
     applyMetadataChangesToCreateQuery(it->second, metadata);
     TableNamesSet new_dependencies = getDependenciesSetFromCreateQuery(local_context->getGlobalContext(), table_id.getQualifiedName(), it->second);
-    DatabaseCatalog::instance().updateLoadingDependencies(table_id, std::move(new_dependencies));
+    getContext()->getDatabaseCatalog().updateLoadingDependencies(table_id, std::move(new_dependencies));
 }
 
 std::vector<std::pair<ASTPtr, StoragePtr>> DatabaseMemory::getTablesForBackup(const FilterByNameFunction & filter, const ContextPtr & local_context) const

@@ -259,7 +259,7 @@ void CachedOnDiskWriteBufferFromFile::cacheData(char * data, size_t size)
     {
         std::shared_ptr<FilesystemCacheLog> cache_log;
         if (enable_cache_log)
-            cache_log = Context::getGlobalContextInstance()->getFilesystemCacheLog();
+            cache_log = Context::getSystemCatalogContextInstance()->getFilesystemCacheLog();
 
         cache_writer = std::make_unique<FileSegmentRangeWriter>(cache.get(), key, cache_log, query_id, source_path);
     }

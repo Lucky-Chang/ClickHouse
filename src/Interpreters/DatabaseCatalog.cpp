@@ -1,3 +1,6 @@
+#include <atomic>
+#include <map>
+#include <mutex>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/loadMetadata.h>
@@ -21,6 +24,7 @@
 #include <Common/noexcept_scope.h>
 #include <Common/checkStackSize.h>
 
+#include "base/types.h"
 #include "config_core.h"
 
 #if USE_MYSQL
@@ -56,7 +60,7 @@ namespace ErrorCodes
 
 TemporaryTableHolder::TemporaryTableHolder(ContextPtr context_, const TemporaryTableHolder::Creator & creator, const ASTPtr & query)
     : WithContext(context_->getGlobalContext())
-    , temporary_tables(DatabaseCatalog::instance().getDatabaseForTemporaryTables().get())
+    , temporary_tables(context_->getDatabaseCatalog().getDatabaseForTemporaryTables().get())
 {
     ASTPtr original_create;
     ASTCreateQuery * create = dynamic_cast<ASTCreateQuery *>(query.get());
@@ -78,7 +82,7 @@ TemporaryTableHolder::TemporaryTableHolder(ContextPtr context_, const TemporaryT
     }
     auto table_id = StorageID(DatabaseCatalog::TEMPORARY_DATABASE, global_name, id);
     auto table = creator(table_id);
-    DatabaseCatalog::instance().addUUIDMapping(id);
+    context_->getDatabaseCatalog().addUUIDMapping(id);
     temporary_tables->createTable(getContext(), global_name, table, original_create);
     table->startup();
 }
@@ -155,7 +159,7 @@ void DatabaseCatalog::initializeAndLoadTemporaryDatabase()
 
 void DatabaseCatalog::loadDatabases()
 {
-    if (Context::getGlobalContextInstance()->getApplicationType() == Context::ApplicationType::SERVER && unused_dir_cleanup_period_sec)
+    if (Context::getSystemCatalogContextInstance()->getApplicationType() == Context::ApplicationType::SERVER && unused_dir_cleanup_period_sec)
     {
         auto cleanup_task_holder
             = getContext()->getSchedulePool().createTask("DatabaseCatalog", [this]() { this->cleanupStoreDirectoryTask(); });
@@ -174,13 +178,11 @@ void DatabaseCatalog::loadDatabases()
 
     /// Another background thread which drops temporary LiveViews.
     /// We should start it after loadMarkedAsDroppedTables() to avoid race condition.
-    TemporaryLiveViewCleaner::instance().startup();
+    temporary_live_view_cleaner.get().startup();
 }
 
 void DatabaseCatalog::shutdownImpl()
 {
-    TemporaryLiveViewCleaner::shutdown();
-
     if (cleanup_task)
         (*cleanup_task)->deactivate();
 
@@ -456,9 +458,9 @@ DatabasePtr DatabaseCatalog::detachDatabase(ContextPtr local_context, const Stri
 
         /// Old ClickHouse versions did not store database.sql files
         /// Remove metadata dir (if exists) to avoid recreation of .sql file on server startup
-        fs::path database_metadata_dir = fs::path(getContext()->getPath()) / "metadata" / escapeForFileName(database_name);
+        fs::path database_metadata_dir = fs::path(getContext()->getCatalogPath()) / "metadata" / escapeForFileName(database_name);
         fs::remove(database_metadata_dir);
-        fs::path database_metadata_file = fs::path(getContext()->getPath()) / "metadata" / (escapeForFileName(database_name) + ".sql");
+        fs::path database_metadata_file = fs::path(getContext()->getCatalogPath()) / "metadata" / (escapeForFileName(database_name) + ".sql");
         fs::remove(database_metadata_file);
 
         if (db_uuid != UUIDHelpers::Nil)
@@ -652,46 +654,63 @@ bool DatabaseCatalog::hasUUIDMapping(const UUID & uuid)
     return map_part.map.contains(uuid);
 }
 
-std::unique_ptr<DatabaseCatalog> DatabaseCatalog::database_catalog;
+std::map<String, std::unique_ptr<DatabaseCatalog>> DatabaseCatalog::database_catalogs;
+std::mutex DatabaseCatalog::catalogs_mutex;
 
-DatabaseCatalog::DatabaseCatalog(ContextMutablePtr global_context_)
-    : WithMutableContext(global_context_), log(&Poco::Logger::get("DatabaseCatalog"))
+DatabaseCatalog::DatabaseCatalog(ContextMutablePtr global_context_, TemporaryLiveViewCleaner & cleaner, const String & catalog_name_)
+    : WithMutableContext(global_context_)
+    , temporary_live_view_cleaner(cleaner)
+    , catalog_prefix_path(global_context_->getCatalogPrefixPath())
+    , log(&Poco::Logger::get(getNameForLogs(catalog_name_)))
 {
-    TemporaryLiveViewCleaner::init(global_context_);
 }
 
-DatabaseCatalog & DatabaseCatalog::init(ContextMutablePtr global_context_)
+DatabaseCatalog & DatabaseCatalog::init(ContextMutablePtr global_context_, const String & catalog_name_)
 {
-    if (database_catalog)
+    std::unique_lock<std::mutex> lock(catalogs_mutex);
+    if (database_catalogs.contains(catalog_name_))
     {
         throw Exception("Database catalog is initialized twice. This is a bug.",
             ErrorCodes::LOGICAL_ERROR);
     }
 
-    database_catalog.reset(new DatabaseCatalog(global_context_));
+    TemporaryLiveViewCleaner & temporary_live_view_cleaner = TemporaryLiveViewCleaner::init(global_context_, catalog_name_);
+    auto [it, _] = database_catalogs.emplace(catalog_name_, new DatabaseCatalog(global_context_, temporary_live_view_cleaner, catalog_name_));
 
-    return *database_catalog;
+    return *(it->second);
 }
 
-DatabaseCatalog & DatabaseCatalog::instance()
+DatabaseCatalog & DatabaseCatalog::instance(const String & catalog_name_)
 {
-    if (!database_catalog)
+    std::unique_lock<std::mutex> lock(catalogs_mutex);
+    auto it = database_catalogs.find(catalog_name_);
+    if (it == database_catalogs.end())
     {
         throw Exception("Database catalog is not initialized. This is a bug.",
             ErrorCodes::LOGICAL_ERROR);
     }
 
-    return *database_catalog;
+    return *(it->second);
 }
 
 void DatabaseCatalog::shutdown()
 {
+    TemporaryLiveViewCleaner::shutdown();
     // The catalog might not be initialized yet by init(global_context). It can
     // happen if some exception was thrown on first steps of startup.
-    if (database_catalog)
-    {
-        database_catalog->shutdownImpl();
-    }
+    std::unique_lock<std::mutex> lock(catalogs_mutex);
+    for (auto && [catalog_name, catalog] : database_catalogs)
+        catalog->shutdownImpl();
+}
+
+Strings DatabaseCatalog::getDatabaseCatalogNames()
+{
+    std::unique_lock<std::mutex> lock(catalogs_mutex);
+    Strings names;
+    names.reserve(database_catalogs.size());
+    for (auto && [catalog_name, _] : database_catalogs)
+        names.push_back(catalog_name);
+    return names;
 }
 
 DatabasePtr DatabaseCatalog::getDatabase(const String & database_name, ContextPtr local_context) const
@@ -804,7 +823,7 @@ void DatabaseCatalog::loadMarkedAsDroppedTables()
     /// we should load them and enqueue cleanup to remove data from store/ and metadata from ZooKeeper
 
     std::map<String, StorageID> dropped_metadata;
-    String path = getContext()->getPath() + "metadata_dropped/";
+    String path = getContext()->getCatalogPath() + "metadata_dropped/";
 
     if (!std::filesystem::exists(path))
     {
@@ -859,7 +878,7 @@ void DatabaseCatalog::loadMarkedAsDroppedTables()
 
 String DatabaseCatalog::getPathForDroppedMetadata(const StorageID & table_id) const
 {
-    return getContext()->getPath() + "metadata_dropped/" +
+    return getContext()->getCatalogPath() + "metadata_dropped/" +
            escapeForFileName(table_id.getDatabaseName()) + "." +
            escapeForFileName(table_id.getTableName()) + "." +
            toString(table_id.uuid) + ".sql";
@@ -890,7 +909,7 @@ void DatabaseCatalog::enqueueDroppedTableCleanup(StorageID table_id, StoragePtr 
 
         if (create)
         {
-            String data_path = "store/" + getPathForUUID(table_id.uuid);
+            String data_path = getCatalogPrefixPath() + "store/" + getPathForUUID(table_id.uuid);
             create->setDatabase(table_id.database_name);
             create->setTable(table_id.table_name);
             try
@@ -1022,7 +1041,7 @@ void DatabaseCatalog::dropTableFinally(const TableMarkedAsDropped & table)
     /// Even if table is not loaded, try remove its data from disks.
     for (const auto & [disk_name, disk] : getContext()->getDisksMap())
     {
-        String data_path = "store/" + getPathForUUID(table.table_id.uuid);
+        String data_path = getCatalogPrefixPath() + "store/" + getPathForUUID(table.table_id.uuid);
         if (!disk->exists(data_path) || disk->isReadOnly())
             continue;
 
@@ -1169,6 +1188,11 @@ void DatabaseCatalog::updateLoadingDependencies(const StorageID & table_id, Tabl
     old_dependencies = std::move(new_dependencies);
 }
 
+String DatabaseCatalog::getCatalogPrefixPath() const
+{
+    return catalog_prefix_path;
+}
+
 void DatabaseCatalog::cleanupStoreDirectoryTask()
 {
     for (const auto & [disk_name, disk] : getContext()->getDisksMap())
@@ -1177,7 +1201,7 @@ void DatabaseCatalog::cleanupStoreDirectoryTask()
             continue;
 
         size_t affected_dirs = 0;
-        for (auto it = disk->iterateDirectory("store"); it->isValid(); it->next())
+        for (auto it = disk->iterateDirectory(getCatalogPrefixPath() + "store"); it->isValid(); it->next())
         {
             String prefix = it->name();
             bool expected_prefix_dir = disk->isDirectory(it->path()) && prefix.size() == 3 && isHexDigit(prefix[0]) && isHexDigit(prefix[1])
@@ -1285,43 +1309,44 @@ bool DatabaseCatalog::maybeRemoveDirectory(const String & disk_name, const DiskP
     }
 }
 
-static void maybeUnlockUUID(UUID uuid)
+static void maybeUnlockUUID(UUID uuid, DatabaseCatalog & catalog)
 {
     if (uuid == UUIDHelpers::Nil)
         return;
 
-    chassert(DatabaseCatalog::instance().hasUUIDMapping(uuid));
-    auto db_and_table = DatabaseCatalog::instance().tryGetByUUID(uuid);
+    chassert(catalog.hasUUIDMapping(uuid));
+    auto db_and_table = catalog.tryGetByUUID(uuid);
     if (!db_and_table.first && !db_and_table.second)
     {
-        DatabaseCatalog::instance().removeUUIDMappingFinally(uuid);
+        catalog.removeUUIDMappingFinally(uuid);
         return;
     }
     chassert(db_and_table.first || !db_and_table.second);
 }
 
-TemporaryLockForUUIDDirectory::TemporaryLockForUUIDDirectory(UUID uuid_)
-    : uuid(uuid_)
+TemporaryLockForUUIDDirectory::TemporaryLockForUUIDDirectory(UUID uuid_, DatabaseCatalog & catalog_)
+    : uuid(uuid_), catalog(catalog_)
 {
     if (uuid != UUIDHelpers::Nil)
-        DatabaseCatalog::instance().addUUIDMapping(uuid);
+        catalog.get().addUUIDMapping(uuid);
 }
 
 TemporaryLockForUUIDDirectory::~TemporaryLockForUUIDDirectory()
 {
-    maybeUnlockUUID(uuid);
+    maybeUnlockUUID(uuid, catalog);
 }
 
 TemporaryLockForUUIDDirectory::TemporaryLockForUUIDDirectory(TemporaryLockForUUIDDirectory && rhs) noexcept
-    : uuid(rhs.uuid)
+    : uuid(rhs.uuid), catalog(rhs.catalog)
 {
     rhs.uuid = UUIDHelpers::Nil;
 }
 
 TemporaryLockForUUIDDirectory & TemporaryLockForUUIDDirectory::operator = (TemporaryLockForUUIDDirectory && rhs) noexcept
 {
-    maybeUnlockUUID(uuid);
+    maybeUnlockUUID(uuid, catalog);
     uuid = rhs.uuid;
+    catalog = rhs.catalog;
     rhs.uuid = UUIDHelpers::Nil;
     return *this;
 }

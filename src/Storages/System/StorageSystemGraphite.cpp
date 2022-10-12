@@ -28,7 +28,7 @@ NamesAndTypesList StorageSystemGraphite::getNamesAndTypes()
  */
 static StorageSystemGraphite::Configs getConfigs(ContextPtr context)
 {
-    const Databases databases = DatabaseCatalog::instance().getDatabases();
+    const Databases databases = context->getDatabaseCatalog().getDatabases();
     StorageSystemGraphite::Configs graphite_configs;
 
     for (const auto & db : databases)

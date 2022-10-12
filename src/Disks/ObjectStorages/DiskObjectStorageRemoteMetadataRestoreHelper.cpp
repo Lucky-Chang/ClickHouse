@@ -1,6 +1,7 @@
 #include <Disks/ObjectStorages/DiskObjectStorageRemoteMetadataRestoreHelper.h>
 #include <Disks/ObjectStorages/DiskObjectStorage.h>
 #include <Disks/ObjectStorages/DiskObjectStorageMetadata.h>
+#include <Interpreters/Context.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromFile.h>
@@ -155,9 +156,12 @@ void DiskObjectStorageRemoteMetadataRestoreHelper::migrateToRestorableSchema()
 
         Futures results;
 
-        for (const auto & root : data_roots)
-            if (disk->exists(root))
-                migrateToRestorableSchemaRecursive(root + '/', results);
+        for (auto && prefix : Context::getAllCatalogPrefixPaths())
+        {
+            for (const auto & root : data_roots)
+                if (disk->exists(prefix + root))
+                    migrateToRestorableSchemaRecursive(prefix + root + '/', results);
+        }
 
         for (auto & result : results)
             result.wait();
@@ -225,9 +229,12 @@ void DiskObjectStorageRemoteMetadataRestoreHelper::restore(const Poco::Util::Abs
         LOG_INFO(disk->log, "Removing old metadata...");
 
         bool cleanup_s3 = information.source_path != disk->object_storage_root_path;
-        for (const auto & root : data_roots)
-            if (disk->exists(root))
-                disk->removeSharedRecursive(root + '/', !cleanup_s3, {});
+        for (auto && prefix : Context::getAllCatalogPrefixPaths())
+        {
+            for (const auto & root : data_roots)
+                if (disk->exists(prefix + root))
+                    disk->removeSharedRecursive(prefix + root + '/', !cleanup_s3, {});
+        }
 
         LOG_INFO(disk->log, "Old metadata removed, restoring new one");
         restoreFiles(source_object_storage, information);

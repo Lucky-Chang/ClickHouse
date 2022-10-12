@@ -679,7 +679,7 @@ void TCPHandler::processInsertQuery()
             {
                 if (!table_id.empty())
                 {
-                    auto storage_ptr = DatabaseCatalog::instance().getTable(table_id, query_context);
+                    auto storage_ptr = query_context->getDatabaseCatalog().getTable(table_id, query_context);
                     sendTableColumns(storage_ptr->getInMemoryMetadataPtr()->getColumns());
                 }
             }
@@ -816,7 +816,7 @@ void TCPHandler::processTablesStatusRequest()
     for (const QualifiedTableName & table_name: request.tables)
     {
         auto resolved_id = context_to_resolve_table_names->tryResolveStorageID({table_name.database, table_name.table});
-        StoragePtr table = DatabaseCatalog::instance().tryGetTable(resolved_id, context_to_resolve_table_names);
+        StoragePtr table = context_to_resolve_table_names->getDatabaseCatalog().tryGetTable(resolved_id, context_to_resolve_table_names);
         if (!table)
             continue;
 
@@ -1532,7 +1532,7 @@ bool TCPHandler::receiveData(bool scalar)
         /// If such a table does not exist, create it.
         if (resolved)
         {
-            storage = DatabaseCatalog::instance().getTable(resolved, query_context);
+            storage = query_context->getDatabaseCatalog().getTable(resolved, query_context);
         }
         else
         {

@@ -66,6 +66,7 @@ public:
     MacroMap getMacroMap() const { return macros; }
 
     String getValue(const String & key) const;
+    void setValue(const String & key, const String & value);
 
 private:
     MacroMap macros;

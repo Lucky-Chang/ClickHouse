@@ -63,7 +63,7 @@ BlockIO InterpreterRenameQuery::execute()
         table_guards[to];
     }
 
-    auto & database_catalog = DatabaseCatalog::instance();
+    auto & database_catalog = getContext()->getDatabaseCatalog();
 
     /// Must do it in consistent order.
     for (auto & table_guard : table_guards)
@@ -79,7 +79,7 @@ BlockIO InterpreterRenameQuery::executeToTables(const ASTRenameQuery & rename, c
 {
     assert(!rename.rename_if_cannot_exchange || descriptions.size() == 1);
     assert(!(rename.rename_if_cannot_exchange && rename.exchange));
-    auto & database_catalog = DatabaseCatalog::instance();
+    auto & database_catalog = getContext()->getDatabaseCatalog();
 
     for (const auto & elem : descriptions)
     {
@@ -138,7 +138,7 @@ BlockIO InterpreterRenameQuery::executeToTables(const ASTRenameQuery & rename, c
                 rename.dictionary);
 
             if (!dependencies.empty())
-                DatabaseCatalog::instance().addLoadingDependencies(QualifiedTableName{elem.to_database_name, elem.to_table_name}, std::move(dependencies));
+                getContext()->getDatabaseCatalog().addLoadingDependencies(QualifiedTableName{elem.to_database_name, elem.to_table_name}, std::move(dependencies));
         }
     }
 
@@ -153,7 +153,7 @@ BlockIO InterpreterRenameQuery::executeToDatabase(const ASTRenameQuery &, const 
 
     const auto & old_name = descriptions.front().from_database_name;
     const auto & new_name = descriptions.back().to_database_name;
-    auto & catalog = DatabaseCatalog::instance();
+    auto & catalog = getContext()->getDatabaseCatalog();
 
     auto db = descriptions.front().if_exists ? catalog.tryGetDatabase(old_name) : catalog.getDatabase(old_name);
 

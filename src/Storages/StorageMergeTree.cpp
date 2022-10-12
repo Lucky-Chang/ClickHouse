@@ -194,8 +194,8 @@ void StorageMergeTree::shutdown()
         /// process.
         /// Do not clear old parts in case when server is shutting down because it failed to start due to some exception.
 
-        if (Context::getGlobalContextInstance()->getApplicationType() == Context::ApplicationType::SERVER
-            && Context::getGlobalContextInstance()->isServerCompletelyStarted())
+        if (Context::getSystemCatalogContextInstance()->getApplicationType() == Context::ApplicationType::SERVER
+            && Context::getSystemCatalogContextInstance()->isServerCompletelyStarted())
             clearOldPartsFromFilesystem(true);
     }
     catch (...)
@@ -319,7 +319,7 @@ void StorageMergeTree::alter(
     {
         changeSettings(new_metadata.settings_changes, table_lock_holder);
 
-        DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata);
+        getContext()->getDatabaseCatalog().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata);
     }
     else
     {
@@ -329,7 +329,7 @@ void StorageMergeTree::alter(
             /// Reinitialize primary key because primary key column types might have changed.
             setProperties(new_metadata, old_metadata);
 
-            DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata);
+            getContext()->getDatabaseCatalog().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata);
 
             if (!maybe_mutation_commands.empty())
                 mutation_version = startMutation(maybe_mutation_commands, local_context);

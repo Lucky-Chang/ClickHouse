@@ -94,7 +94,7 @@ void SelectStreamFactory::createForShard(
         else
         {
             auto resolved_id = context->resolveStorageID(main_table);
-            main_table_storage = DatabaseCatalog::instance().tryGetTable(resolved_id, context);
+            main_table_storage = context->getDatabaseCatalog().tryGetTable(resolved_id, context);
         }
 
 
@@ -194,7 +194,7 @@ SelectStreamFactory::ShardPlans SelectStreamFactory::createForShardWithParallelR
     auto is_local_replica_obsolete = [&]()
     {
         auto resolved_id = context->resolveStorageID(main_table);
-        auto main_table_storage = DatabaseCatalog::instance().tryGetTable(resolved_id, context);
+        auto main_table_storage = context->getDatabaseCatalog().tryGetTable(resolved_id, context);
         const auto * replicated_storage = dynamic_cast<const StorageReplicatedMergeTree *>(main_table_storage.get());
 
         if (!replicated_storage)

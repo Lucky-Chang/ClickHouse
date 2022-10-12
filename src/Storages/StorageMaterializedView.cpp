@@ -124,7 +124,7 @@ StorageMaterializedView::StorageMaterializedView(
         create_interpreter.setInternal(true);
         create_interpreter.execute();
 
-        target_table_id = DatabaseCatalog::instance().getTable({manual_create_query->getDatabase(), manual_create_query->getTable()}, getContext())->getStorageID();
+        target_table_id = getContext()->getDatabaseCatalog().getTable({manual_create_query->getDatabase(), manual_create_query->getTable()}, getContext())->getStorageID();
     }
 }
 
@@ -210,7 +210,7 @@ void StorageMaterializedView::drop()
     auto table_id = getStorageID();
     const auto & select_query = getInMemoryMetadataPtr()->getSelectQuery();
     if (!select_query.select_table_id.empty())
-        DatabaseCatalog::instance().removeDependency(select_query.select_table_id, table_id);
+        getContext()->getDatabaseCatalog().removeDependency(select_query.select_table_id, table_id);
 
     dropInnerTableIfAny(true, getContext());
 }
@@ -266,13 +266,13 @@ void StorageMaterializedView::alter(
         const auto & new_select = new_metadata.select;
         const auto & old_select = old_metadata.getSelectQuery();
 
-        DatabaseCatalog::instance().updateDependency(old_select.select_table_id, table_id, new_select.select_table_id, table_id);
+        getContext()->getDatabaseCatalog().updateDependency(old_select.select_table_id, table_id, new_select.select_table_id, table_id);
 
         new_metadata.setSelectQuery(new_select);
     }
     /// end modify query
 
-    DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata);
+    getContext()->getDatabaseCatalog().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata);
     setInMemoryMetadata(new_metadata);
 }
 
@@ -364,7 +364,7 @@ void StorageMaterializedView::renameInMemory(const StorageID & new_table_id)
     }
     const auto & select_query = metadata_snapshot->getSelectQuery();
     // TODO Actually we don't need to update dependency if MV has UUID, but then db and table name will be outdated
-    DatabaseCatalog::instance().updateDependency(select_query.select_table_id, old_table_id, select_query.select_table_id, getStorageID());
+    getContext()->getDatabaseCatalog().updateDependency(select_query.select_table_id, old_table_id, select_query.select_table_id, getStorageID());
 }
 
 void StorageMaterializedView::startup()
@@ -372,7 +372,7 @@ void StorageMaterializedView::startup()
     auto metadata_snapshot = getInMemoryMetadataPtr();
     const auto & select_query = metadata_snapshot->getSelectQuery();
     if (!select_query.select_table_id.empty())
-        DatabaseCatalog::instance().addDependency(select_query.select_table_id, getStorageID());
+        getContext()->getDatabaseCatalog().addDependency(select_query.select_table_id, getStorageID());
 }
 
 void StorageMaterializedView::shutdown()
@@ -381,19 +381,19 @@ void StorageMaterializedView::shutdown()
     const auto & select_query = metadata_snapshot->getSelectQuery();
     /// Make sure the dependency is removed after DETACH TABLE
     if (!select_query.select_table_id.empty())
-        DatabaseCatalog::instance().removeDependency(select_query.select_table_id, getStorageID());
+        getContext()->getDatabaseCatalog().removeDependency(select_query.select_table_id, getStorageID());
 }
 
 StoragePtr StorageMaterializedView::getTargetTable() const
 {
     checkStackSize();
-    return DatabaseCatalog::instance().getTable(target_table_id, getContext());
+    return getContext()->getDatabaseCatalog().getTable(target_table_id, getContext());
 }
 
 StoragePtr StorageMaterializedView::tryGetTargetTable() const
 {
     checkStackSize();
-    return DatabaseCatalog::instance().tryGetTable(target_table_id, getContext());
+    return getContext()->getDatabaseCatalog().tryGetTable(target_table_id, getContext());
 }
 
 NamesAndTypesList StorageMaterializedView::getVirtuals() const

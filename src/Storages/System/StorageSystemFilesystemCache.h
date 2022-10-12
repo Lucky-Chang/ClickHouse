@@ -6,7 +6,7 @@ namespace DB
 {
 
 /**
- * Usgae example. How to get mapping from local paths to remote paths:
+ * Usage example. How to get mapping from local paths to remote paths:
  * SELECT
  *     cache_path,
  *     cache_hits,

@@ -1,5 +1,6 @@
 #include "getTableOverride.h"
 
+#include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTTableOverrides.h>
@@ -8,9 +9,9 @@
 namespace DB
 {
 
-ASTPtr tryGetTableOverride(const String & mapped_database, const String & table)
+ASTPtr tryGetTableOverride(ContextPtr context, const String & mapped_database, const String & table)
 {
-    if (auto database_ptr = DatabaseCatalog::instance().tryGetDatabase(mapped_database))
+    if (auto database_ptr = context->getDatabaseCatalog().tryGetDatabase(mapped_database))
     {
         auto create_query = database_ptr->getCreateDatabaseQuery();
         if (auto * create_database_query = create_query->as<ASTCreateQuery>())

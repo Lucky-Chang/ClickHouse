@@ -25,6 +25,7 @@
 #include <IO/ReadHelpers.h>
 #include <Databases/IDatabase.h>
 #include <chrono>
+#include <map>
 
 
 #include "config_core.h"
@@ -1381,8 +1382,6 @@ void AsynchronousMetrics::update(TimePoint update_time)
     }
 
     {
-        auto databases = DatabaseCatalog::instance().getDatabases();
-
         size_t max_queue_size = 0;
         size_t max_inserts_in_queue = 0;
         size_t max_merges_in_queue = 0;
@@ -1396,60 +1395,68 @@ void AsynchronousMetrics::update(TimePoint update_time)
 
         size_t max_part_count_for_partition = 0;
 
-        size_t number_of_databases = databases.size();
+        size_t number_of_database_catalogs = 0;
+        size_t number_of_databases = 0;
         size_t total_number_of_tables = 0;
 
         size_t total_number_of_bytes = 0;
         size_t total_number_of_rows = 0;
         size_t total_number_of_parts = 0;
 
-        for (const auto & db : databases)
+        for (auto && catalog_name : DatabaseCatalog::getDatabaseCatalogNames())
         {
-            /// Check if database can contain MergeTree tables
-            if (!db.second->canContainMergeTreeTables())
-                continue;
+            auto databases = DatabaseCatalog::instance(catalog_name).getDatabases();
+            ++number_of_database_catalogs;
 
-            for (auto iterator = db.second->getTablesIterator(getContext()); iterator->isValid(); iterator->next())
+            for (const auto & db : databases)
             {
-                ++total_number_of_tables;
-                const auto & table = iterator->table();
-                if (!table)
+                ++number_of_databases;
+                /// Check if database can contain MergeTree tables
+                if (!db.second->canContainMergeTreeTables())
                     continue;
 
-                if (MergeTreeData * table_merge_tree = dynamic_cast<MergeTreeData *>(table.get()))
+                for (auto iterator = db.second->getTablesIterator(getContext()); iterator->isValid(); iterator->next())
                 {
-                    const auto & settings = getContext()->getSettingsRef();
+                    ++total_number_of_tables;
+                    const auto & table = iterator->table();
+                    if (!table)
+                        continue;
 
-                    calculateMax(max_part_count_for_partition, table_merge_tree->getMaxPartsCountForPartition());
-                    total_number_of_bytes += table_merge_tree->totalBytes(settings).value();
-                    total_number_of_rows += table_merge_tree->totalRows(settings).value();
-                    total_number_of_parts += table_merge_tree->getPartsCount();
-                }
-
-                if (StorageReplicatedMergeTree * table_replicated_merge_tree = typeid_cast<StorageReplicatedMergeTree *>(table.get()))
-                {
-                    StorageReplicatedMergeTree::Status status;
-                    table_replicated_merge_tree->getStatus(status, false);
-
-                    calculateMaxAndSum(max_queue_size, sum_queue_size, status.queue.queue_size);
-                    calculateMaxAndSum(max_inserts_in_queue, sum_inserts_in_queue, status.queue.inserts_in_queue);
-                    calculateMaxAndSum(max_merges_in_queue, sum_merges_in_queue, status.queue.merges_in_queue);
-
-                    if (!status.is_readonly)
+                    if (MergeTreeData * table_merge_tree = dynamic_cast<MergeTreeData *>(table.get()))
                     {
-                        try
-                        {
-                            time_t absolute_delay = 0;
-                            time_t relative_delay = 0;
-                            table_replicated_merge_tree->getReplicaDelays(absolute_delay, relative_delay);
+                        const auto & settings = getContext()->getSettingsRef();
 
-                            calculateMax(max_absolute_delay, absolute_delay);
-                            calculateMax(max_relative_delay, relative_delay);
-                        }
-                        catch (...)
+                        calculateMax(max_part_count_for_partition, table_merge_tree->getMaxPartsCountForPartition());
+                        total_number_of_bytes += table_merge_tree->totalBytes(settings).value();
+                        total_number_of_rows += table_merge_tree->totalRows(settings).value();
+                        total_number_of_parts += table_merge_tree->getPartsCount();
+                    }
+
+                    if (StorageReplicatedMergeTree * table_replicated_merge_tree = typeid_cast<StorageReplicatedMergeTree *>(table.get()))
+                    {
+                        StorageReplicatedMergeTree::Status status;
+                        table_replicated_merge_tree->getStatus(status, false);
+
+                        calculateMaxAndSum(max_queue_size, sum_queue_size, status.queue.queue_size);
+                        calculateMaxAndSum(max_inserts_in_queue, sum_inserts_in_queue, status.queue.inserts_in_queue);
+                        calculateMaxAndSum(max_merges_in_queue, sum_merges_in_queue, status.queue.merges_in_queue);
+
+                        if (!status.is_readonly)
                         {
-                            tryLogCurrentException(__PRETTY_FUNCTION__,
-                                "Cannot get replica delay for table: " + backQuoteIfNeed(db.first) + "." + backQuoteIfNeed(iterator->name()));
+                            try
+                            {
+                                time_t absolute_delay = 0;
+                                time_t relative_delay = 0;
+                                table_replicated_merge_tree->getReplicaDelays(absolute_delay, relative_delay);
+
+                                calculateMax(max_absolute_delay, absolute_delay);
+                                calculateMax(max_relative_delay, relative_delay);
+                            }
+                            catch (...)
+                            {
+                                tryLogCurrentException(__PRETTY_FUNCTION__,
+                                    "Cannot get replica delay for table: " + backQuoteIfNeed(db.first) + "." + backQuoteIfNeed(iterator->name()));
+                            }
                         }
                     }
                 }
@@ -1469,6 +1476,7 @@ void AsynchronousMetrics::update(TimePoint update_time)
 
         new_values["MaxPartCountForPartition"] = max_part_count_for_partition;
 
+        new_values["NumberOfDatabaseCatalogs"] = number_of_database_catalogs;
         new_values["NumberOfDatabases"] = number_of_databases;
         new_values["NumberOfTables"] = total_number_of_tables;
 
@@ -1613,28 +1621,32 @@ void AsynchronousMetrics::updateDetachedPartsStats()
 {
     DetachedPartsStats current_values{};
 
-    for (const auto & db : DatabaseCatalog::instance().getDatabases())
+    const auto database_catalog_names = DatabaseCatalog::getDatabaseCatalogNames();
+    for (auto && catalog_name : database_catalog_names)
     {
-        if (!db.second->canContainMergeTreeTables())
-            continue;
-
-        for (auto iterator = db.second->getTablesIterator(getContext()); iterator->isValid(); iterator->next())
+        for (const auto & db : DatabaseCatalog::instance(catalog_name).getDatabases())
         {
-            const auto & table = iterator->table();
-            if (!table)
+            if (!db.second->canContainMergeTreeTables())
                 continue;
 
-            if (MergeTreeData * table_merge_tree = dynamic_cast<MergeTreeData *>(table.get()))
+            for (auto iterator = db.second->getTablesIterator(getContext()); iterator->isValid(); iterator->next())
             {
-                for (const auto & detached_part: table_merge_tree->getDetachedParts())
+                const auto & table = iterator->table();
+                if (!table)
+                    continue;
+
+                if (MergeTreeData * table_merge_tree = dynamic_cast<MergeTreeData *>(table.get()))
                 {
-                    if (!detached_part.valid_name)
-                        continue;
+                    for (const auto & detached_part: table_merge_tree->getDetachedParts())
+                    {
+                        if (!detached_part.valid_name)
+                            continue;
 
-                    if (detached_part.prefix.empty())
-                        ++current_values.detached_by_user;
+                        if (detached_part.prefix.empty())
+                            ++current_values.detached_by_user;
 
-                    ++current_values.count;
+                        ++current_values.count;
+                    }
                 }
             }
         }

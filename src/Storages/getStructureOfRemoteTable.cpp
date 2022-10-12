@@ -49,7 +49,7 @@ ColumnsDescription getStructureOfRemoteTableInShard(
     {
         if (shard_info.isLocal())
         {
-            auto storage_ptr = DatabaseCatalog::instance().getTable(table_id, context);
+            auto storage_ptr = context->getDatabaseCatalog().getTable(table_id, context);
             return storage_ptr->getInMemoryMetadataPtr()->getColumns();
         }
 

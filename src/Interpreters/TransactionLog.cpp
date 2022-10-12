@@ -43,7 +43,7 @@ catch (...)
 
 
 TransactionLog::TransactionLog()
-    : global_context(Context::getGlobalContextInstance())
+    : global_context(Context::getSystemCatalogContextInstance())
     , log(&Poco::Logger::get("TransactionLog"))
     , zookeeper_path(global_context->getConfigRef().getString("transaction_log.zookeeper_path", "/clickhouse/txn"))
     , zookeeper_path_log(zookeeper_path + "/log")

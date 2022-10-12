@@ -547,13 +547,13 @@ size_t StorageFileLog::getPollTimeoutMillisecond() const
 bool StorageFileLog::checkDependencies(const StorageID & table_id)
 {
     // Check if all dependencies are attached
-    auto dependencies = DatabaseCatalog::instance().getDependencies(table_id);
+    auto dependencies = getContext()->getDatabaseCatalog().getDependencies(table_id);
     if (dependencies.empty())
         return true;
 
     for (const auto & storage : dependencies)
     {
-        auto table = DatabaseCatalog::instance().tryGetTable(storage, getContext());
+        auto table = getContext()->getDatabaseCatalog().tryGetTable(storage, getContext());
         if (!table)
             return false;
 
@@ -574,7 +574,7 @@ size_t StorageFileLog::getTableDependentCount() const
 {
     auto table_id = getStorageID();
     // Check if at least one direct dependency is attached
-    return DatabaseCatalog::instance().getDependencies(table_id).size();
+    return getContext()->getDatabaseCatalog().getDependencies(table_id).size();
 }
 
 void StorageFileLog::threadFunc()
@@ -670,7 +670,7 @@ bool StorageFileLog::streamToViews()
     Stopwatch watch;
 
     auto table_id = getStorageID();
-    auto table = DatabaseCatalog::instance().getTable(table_id, getContext());
+    auto table = getContext()->getDatabaseCatalog().getTable(table_id, getContext());
     if (!table)
         throw Exception("Engine table " + table_id.getNameForLogs() + " doesn't exist", ErrorCodes::LOGICAL_ERROR);
 

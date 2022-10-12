@@ -122,7 +122,7 @@ StoredObjects DiskObjectStorage::getStorageObjects(const String & local_path) co
 
 void DiskObjectStorage::getRemotePathsRecursive(const String & local_path, std::vector<LocalPathWithObjectStoragePaths> & paths_map)
 {
-    /// Protect against concurrent delition of files (for example because of a merge).
+    /// Protect against concurrent deletions of files (for example because of a merge).
     if (metadata_storage->isFile(local_path))
     {
         try
@@ -295,7 +295,7 @@ bool DiskObjectStorage::checkUniqueId(const String & id) const
 
 void DiskObjectStorage::createHardLink(const String & src_path, const String & dst_path, bool should_send_metadata)
 {
-    if (should_send_metadata && !dst_path.starts_with("shadow/"))
+    if (should_send_metadata && !dst_path.starts_with("shadow/") && dst_path.find("/shadow/") == String::npos)
     {
         auto revision = metadata_helper->revision_counter + 1;
         metadata_helper->revision_counter += 1;

@@ -38,7 +38,7 @@ std::optional<String> tryExtractZkPathFromCreateQuery(const IAST & create_query,
     info.table_id.table_name = create->getTable();
     info.table_id.database_name = create->getDatabase();
     info.table_id.uuid = create->uuid;
-    auto database = DatabaseCatalog::instance().tryGetDatabase(info.table_id.database_name);
+    auto database = global_context->getDatabaseCatalog().tryGetDatabase(info.table_id.database_name);
     if (database && database->getEngineName() == "Replicated")
     {
         info.shard = getReplicatedDatabaseShardName(database);

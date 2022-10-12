@@ -101,7 +101,7 @@ void CachedOnDiskReadBufferFromFile::appendFilesystemCacheLog(
             break;
     }
 
-    if (auto cache_log = Context::getGlobalContextInstance()->getFilesystemCacheLog())
+    if (auto cache_log = Context::getSystemCatalogContextInstance()->getFilesystemCacheLog())
         cache_log->add(elem);
 }
 

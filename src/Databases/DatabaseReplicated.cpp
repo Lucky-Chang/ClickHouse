@@ -776,7 +776,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
 
     for (const auto & table_name : tables_to_detach)
     {
-        DDLGuardPtr table_guard = DatabaseCatalog::instance().getDDLGuard(db_name, table_name);
+        DDLGuardPtr table_guard = getContext()->getDatabaseCatalog().getDDLGuard(db_name, table_name);
         if (getDatabaseName() != db_name)
             throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database was renamed, will retry");
 
@@ -788,8 +788,8 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
             String to_name = fmt::format("{}_{}_{}", broken_table_name, max_log_ptr, thread_local_rng() % 1000);
             LOG_DEBUG(log, "Will RENAME TABLE {} TO {}.{}", backQuoteIfNeed(broken_table_name), backQuoteIfNeed(to_database_name), backQuoteIfNeed(to_name));
             assert(db_name < to_database_name);
-            DDLGuardPtr to_table_guard = DatabaseCatalog::instance().getDDLGuard(to_database_name, to_name);
-            auto to_db_ptr = DatabaseCatalog::instance().getDatabase(to_database_name);
+            DDLGuardPtr to_table_guard = getContext()->getDatabaseCatalog().getDDLGuard(to_database_name, to_name);
+            auto to_db_ptr = getContext()->getDatabaseCatalog().getDatabase(to_database_name);
 
             std::lock_guard lock{metadata_mutex};
             UInt64 new_digest = tables_metadata_digest;
@@ -846,8 +846,8 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
 
         LOG_DEBUG(log, "Will RENAME TABLE {} TO {}", backQuoteIfNeed(from), backQuoteIfNeed(to));
         /// TODO Maybe we should do it in two steps: rename all tables to temporary names and then rename them to actual names?
-        DDLGuardPtr table_guard = DatabaseCatalog::instance().getDDLGuard(db_name, std::min(from, to));
-        DDLGuardPtr to_table_guard = DatabaseCatalog::instance().getDDLGuard(db_name, std::max(from, to));
+        DDLGuardPtr table_guard = getContext()->getDatabaseCatalog().getDDLGuard(db_name, std::min(from, to));
+        DDLGuardPtr to_table_guard = getContext()->getDatabaseCatalog().getDDLGuard(db_name, std::max(from, to));
 
         std::lock_guard lock{metadata_mutex};
         UInt64 new_digest = tables_metadata_digest;
@@ -860,7 +860,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
     }
 
     for (const auto & id : dropped_tables)
-        DatabaseCatalog::instance().waitTableFinallyDropped(id);
+        getContext()->getDatabaseCatalog().waitTableFinallyDropped(id);
 
     for (const auto & name_and_meta : table_name_to_metadata)
     {
@@ -1216,7 +1216,7 @@ DatabaseReplicated::getTablesForBackup(const FilterByNameFunction & filter, cons
         StoragePtr storage;
         if (create.uuid != UUIDHelpers::Nil)
         {
-            storage = DatabaseCatalog::instance().tryGetByUUID(create.uuid).second;
+            storage = getContext()->getDatabaseCatalog().tryGetByUUID(create.uuid).second;
             if (storage)
                 storage->adjustCreateQueryForBackup(create_table_query);
         }

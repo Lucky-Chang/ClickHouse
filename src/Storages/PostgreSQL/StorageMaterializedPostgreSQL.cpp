@@ -141,7 +141,7 @@ StoragePtr StorageMaterializedPostgreSQL::createTemporary() const
     auto tmp_table_id = StorageID(table_id.database_name, table_id.table_name + TMP_SUFFIX);
 
     /// If for some reason it already exists - drop it.
-    auto tmp_storage = DatabaseCatalog::instance().tryGetTable(tmp_table_id, nested_context);
+    auto tmp_storage = getContext()->getDatabaseCatalog().tryGetTable(tmp_table_id, nested_context);
     if (tmp_storage)
     {
         LOG_TRACE(&Poco::Logger::get("MaterializedPostgreSQLStorage"), "Temporary table {} already exists, dropping", tmp_table_id.getNameForLogs());
@@ -155,13 +155,13 @@ StoragePtr StorageMaterializedPostgreSQL::createTemporary() const
 
 StoragePtr StorageMaterializedPostgreSQL::getNested() const
 {
-    return DatabaseCatalog::instance().getTable(getNestedStorageID(), nested_context);
+    return getContext()->getDatabaseCatalog().getTable(getNestedStorageID(), nested_context);
 }
 
 
 StoragePtr StorageMaterializedPostgreSQL::tryGetNested() const
 {
-    return DatabaseCatalog::instance().tryGetTable(getNestedStorageID(), nested_context);
+    return getContext()->getDatabaseCatalog().tryGetTable(getNestedStorageID(), nested_context);
 }
 
 
@@ -202,7 +202,7 @@ void StorageMaterializedPostgreSQL::createNestedIfNeeded(PostgreSQLTableStructur
         InterpreterCreateQuery interpreter(ast_create, nested_context);
         interpreter.execute();
 
-        auto nested_storage = DatabaseCatalog::instance().getTable(tmp_nested_table_id, nested_context);
+        auto nested_storage = getContext()->getDatabaseCatalog().getTable(tmp_nested_table_id, nested_context);
         /// Save storage_id with correct uuid.
         nested_table_id = nested_storage->getStorageID();
     }

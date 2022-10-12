@@ -64,10 +64,12 @@
 #include <Interpreters/SystemLog.h>
 #include <Interpreters/SessionLog.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/DDLWorker.h>
 #include <Interpreters/DDLTask.h>
 #include <Interpreters/Session.h>
 #include <Interpreters/TraceCollector.h>
+#include <Interpreters/UserDefinedCatalog.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/UncompressedCache.h>
 #include <IO/MMappedFileCache.h>
@@ -85,7 +87,6 @@
 #include <base/EnumReflection.h>
 #include <Common/RemoteHostFilter.h>
 #include <Interpreters/AsynchronousInsertQueue.h>
-#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
 #include <Storages/MergeTree/BackgroundJobsAssignee.h>
 #include <Storages/MergeTree/MergeTreeBackgroundExecutor.h>
@@ -211,7 +212,6 @@ struct ContextSharedPart : boost::noncopyable
 
     String default_profile_name;                            /// Default profile name used for default values.
     String system_profile_name;                             /// Profile used by system processes
-    String buffer_profile_name;                             /// Profile used by Buffer engine for flushing to the underlying
     std::unique_ptr<AccessControl> access_control;
     mutable UncompressedCachePtr uncompressed_cache;        /// The cache of decompressed blocks.
     mutable MarkCachePtr mark_cache;                        /// Cache of marks in compressed files.
@@ -277,6 +277,11 @@ struct ContextSharedPart : boost::noncopyable
     ConfigurationPtr clusters_config;                        /// Stores updated configs
     mutable std::mutex clusters_mutex;                       /// Guards clusters and clusters_config
     std::unique_ptr<ClusterDiscovery> cluster_discovery;
+
+    /// User defined catalogs
+    std::shared_ptr<UserDefinedCatalogs> user_defined_catalogs;
+    mutable std::mutex user_defined_catalogs_mutex;         /// Guards user defined catalogs
+    String default_catalog;
 
     std::shared_ptr<AsynchronousInsertQueue> async_insert_queue;
     std::map<String, UInt16> server_ports;
@@ -518,7 +523,6 @@ struct ContextSharedPart : boost::noncopyable
         delete_schedule_pool.reset();
         delete_distributed_schedule_pool.reset();
         delete_message_broker_schedule_pool.reset();
-        delete_ddl_worker.reset();
         delete_access_control.reset();
 
         total_memory_tracker.resetOvercommitTracker();
@@ -561,19 +565,28 @@ SharedContextHolder::SharedContextHolder(std::unique_ptr<ContextSharedPart> shar
 
 void SharedContextHolder::reset() { shared.reset(); }
 
-ContextMutablePtr Context::createGlobal(ContextSharedPart * shared)
+ContextMutablePtr Context::createCatalog(ContextSharedPart * shared)
 {
     auto res = std::shared_ptr<Context>(new Context);
     res->shared = shared;
     return res;
 }
 
-void Context::initGlobal()
+void Context::initSystemCatalog()
 {
-    assert(!global_context_instance);
-    global_context_instance = shared_from_this();
-    DatabaseCatalog::init(shared_from_this());
+    assert(system_catalog_context_instance.expired());
+    system_catalog_context_instance = shared_from_this();
+    catalog_reference = DatabaseCatalog::init(shared_from_this());
     EventNotifier::init();
+}
+
+void Context::initUserCatalog(const String & user_catalog_name)
+{
+    assert(!user_defined_catalog);
+    user_defined_catalog = user_catalog_name;
+    assert(!user_catalog_context_instances.contains(user_catalog_name));
+    user_catalog_context_instances.emplace(user_catalog_name, shared_from_this());
+    catalog_reference = DatabaseCatalog::init(shared_from_this(), user_catalog_name);
 }
 
 SharedContextHolder Context::createShared()
@@ -792,6 +805,117 @@ const Poco::Util::AbstractConfiguration & Context::getConfigRef() const
     return shared->config ? *shared->config : Poco::Util::Application::instance().config();
 }
 
+void Context::setUserDefinedCatalogsConfig(const Poco::Util::AbstractConfiguration & config, const String & config_name)
+{
+    std::lock_guard lock(shared->user_defined_catalogs_mutex);
+    shared->user_defined_catalogs = std::make_shared<UserDefinedCatalogs>(config, settings, config_name);
+}
+
+std::shared_ptr<UserDefinedCatalogs> Context::getUserDefinedCatalogs() const
+{
+    std::lock_guard lock(shared->user_defined_catalogs_mutex);
+    if (!shared->user_defined_catalogs)
+        shared->user_defined_catalogs = std::make_shared<UserDefinedCatalogs>(getConfigRef(), settings, "user_catalogs");
+    return shared->user_defined_catalogs;
+}
+
+std::shared_ptr<UserDefinedCatalog> Context::getUserDefinedCatalog(const std::string & catalog_name) const
+{
+    auto res = getUserDefinedCatalogs()->getUserDefinedCatalog(catalog_name);
+    if (res)
+        return res;
+    throw Exception("Requested catalog '" + catalog_name + "' not found", ErrorCodes::BAD_GET);
+}
+
+DatabaseCatalog & Context::getDatabaseCatalog() const
+{
+    if (isGlobalContext())
+    {
+        auto lock = getLock();
+        chassert(catalog_reference.has_value());
+        return *catalog_reference;
+    }
+    auto global_context = getGlobalContext();
+    return global_context->getDatabaseCatalog();
+}
+
+void Context::switchGlobalContextToCatalog(const String & catalog_name)
+{
+    if (isGlobalContext())
+        throw Exception("Can't set catalog in global context", ErrorCodes::LOGICAL_ERROR);
+    if (catalog_name == getGlobalContext()->user_defined_catalog.value_or(""))
+        return;
+    auto lock = getLock();
+    auto iter = user_catalog_context_instances.find(catalog_name);
+    if (iter == user_catalog_context_instances.end())
+        throw Exception("Requested catalog '" + catalog_name + "' not found", ErrorCodes::BAD_GET);
+    global_context = iter->second;
+}
+
+void Context::setDefaultCatalog(const String & catalog_name)
+{
+    auto lock = getLock();
+    shared->default_catalog = catalog_name;
+}
+
+ContextPtr Context::getDefaultCatalogContextInstance() const
+{
+    auto lock = getLock();
+    if (shared->default_catalog.empty())
+        return system_catalog_context_instance.lock();
+    auto iter = user_catalog_context_instances.find(shared->default_catalog);
+    if (iter == user_catalog_context_instances.end())
+        throw Exception("Default catalog '" + shared->default_catalog + "' not found", ErrorCodes::BAD_GET);
+    return iter->second.lock();
+}
+
+String Context::getCatalogPrefixPath() const
+{
+    auto lock = getLock();
+    if (user_defined_catalog)
+        return getUserDefinedCatalog(*user_defined_catalog)->getCatalogPrefixPath();
+    return "";
+}
+
+String Context::getCatalogPath() const
+{
+    auto lock = getLock();
+    if (user_defined_catalog)
+        return shared->path + getUserDefinedCatalog(*user_defined_catalog)->getCatalogPrefixPath();
+    return shared->path;
+}
+
+Strings Context::getAllCatalogPrefixPaths()
+{
+    auto ptr = system_catalog_context_instance.lock();
+    if (!ptr)
+        throw Exception("There is no global context or global context has expired", ErrorCodes::LOGICAL_ERROR);
+    auto user_defined_catalogs = ptr->getUserDefinedCatalogs();
+    Strings prefix_paths{""};
+    prefix_paths.reserve(user_defined_catalogs->getUserDefinedCatalogCount() + 1);
+    for (auto && user_catalog_name : user_defined_catalogs->getUserDefinedCatalogNames())
+    {
+        auto catalog = user_defined_catalogs->getUserDefinedCatalog(user_catalog_name);
+        prefix_paths.push_back(catalog->getCatalogPrefixPath());
+    }
+    return prefix_paths;
+}
+
+std::optional<String> Context::getCatalogShard() const
+{
+    auto lock = getLock();
+    if (user_defined_catalog)
+        return getUserDefinedCatalog(*user_defined_catalog)->getCatalogShard();
+    return {};
+}
+
+std::optional<String> Context::getCatalogReplica() const
+{
+    auto lock = getLock();
+    if (user_defined_catalog)
+        return getUserDefinedCatalog(*user_defined_catalog)->getCatalogReplica();
+    return {};
+}
 
 AccessControl & Context::getAccessControl()
 {
@@ -1200,7 +1324,7 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression)
             if (!insertion_table.empty())
             {
                 const auto & structure_hint
-                    = DatabaseCatalog::instance().getTable(insertion_table, shared_from_this())->getInMemoryMetadataPtr()->columns;
+                    = getDatabaseCatalog().getTable(insertion_table, shared_from_this())->getInMemoryMetadataPtr()->columns;
                 table_function_ptr->setStructureHint(structure_hint);
             }
         }
@@ -1357,7 +1481,7 @@ String Context::getInitialQueryId() const
 }
 
 
-void Context::setCurrentDatabaseNameInGlobalContext(const String & name)
+void Context::setCurrentDatabaseNameInSystemCatalogContext(const String & name)
 {
     if (!isGlobalContext())
         throw Exception("Cannot set current database for non global context, this method should be used during server initialization",
@@ -1371,9 +1495,19 @@ void Context::setCurrentDatabaseNameInGlobalContext(const String & name)
     current_database = name;
 }
 
+void Context::setCurrentDatabaseNameInUserCatalogContext(const String & name)
+{
+    if (!isGlobalContext())
+        throw Exception("Cannot set current database for non global context, this method should be used during server initialization",
+                        ErrorCodes::LOGICAL_ERROR);
+    auto lock = getLock();
+
+    current_database = name;
+}
+
 void Context::setCurrentDatabase(const String & name)
 {
-    DatabaseCatalog::instance().assertDatabaseExists(name);
+    getDatabaseCatalog().assertDatabaseExists(name);
     auto lock = getLock();
     current_database = name;
     calculateAccessRights();
@@ -1440,6 +1574,19 @@ void Context::setDefaultFormat(const String & name)
 
 MultiVersion<Macros>::Version Context::getMacros() const
 {
+    auto catalog_shard = getCatalogShard();
+    auto catalog_replica = getCatalogReplica();
+
+    if (catalog_shard || catalog_replica)
+    {
+        auto macro = shared->macros.get();
+        auto catalog_macro = std::make_shared<Macros>(*macro);
+        if (catalog_shard)
+            catalog_macro->setValue("shard", *catalog_shard);
+        if (catalog_replica)
+            catalog_macro->setValue("replica", *catalog_replica);
+        return catalog_macro;
+    }
     return shared->macros.get();
 }
 
@@ -1474,13 +1621,6 @@ ContextMutablePtr Context::getGlobalContext() const
     if (!ptr) throw Exception("There is no global context or global context has expired", ErrorCodes::LOGICAL_ERROR);
     return ptr;
 }
-
-ContextMutablePtr Context::getBufferContext() const
-{
-    if (!buffer_context) throw Exception("There is no buffer context", ErrorCodes::LOGICAL_ERROR);
-    return buffer_context;
-}
-
 
 const EmbeddedDictionaries & Context::getEmbeddedDictionaries() const
 {
@@ -2931,10 +3071,6 @@ void Context::setDefaultProfiles(const Poco::Util::AbstractConfiguration & confi
     setCurrentProfile(shared->system_profile_name);
 
     applySettingsQuirks(settings, &Poco::Logger::get("SettingsQuirks"));
-
-    shared->buffer_profile_name = config.getString("buffer_profile", shared->system_profile_name);
-    buffer_context = Context::createCopy(shared_from_this());
-    buffer_context->setCurrentProfile(shared->buffer_profile_name);
 }
 
 String Context::getDefaultProfileName() const
@@ -3096,7 +3232,7 @@ StorageID Context::resolveStorageID(StorageID storage_id, StorageNamespace where
     if (exc)
         throw Exception(*exc);
     if (!resolved.hasUUID() && resolved.database_name != DatabaseCatalog::TEMPORARY_DATABASE)
-        resolved.uuid = DatabaseCatalog::instance().getDatabase(resolved.database_name)->tryGetTableUUID(resolved.table_name);
+        resolved.uuid = getDatabaseCatalog().getDatabase(resolved.database_name)->tryGetTableUUID(resolved.table_name);
     return resolved;
 }
 
@@ -3112,7 +3248,7 @@ StorageID Context::tryResolveStorageID(StorageID storage_id, StorageNamespace wh
     }
     if (resolved && !resolved.hasUUID() && resolved.database_name != DatabaseCatalog::TEMPORARY_DATABASE)
     {
-        auto db = DatabaseCatalog::instance().tryGetDatabase(resolved.database_name);
+        auto db = getDatabaseCatalog().tryGetDatabase(resolved.database_name);
         if (db)
             resolved.uuid = db->tryGetTableUUID(resolved.table_name);
     }

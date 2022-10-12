@@ -930,9 +930,9 @@ void Client::processOptions(const OptionsDescription & options_description,
     send_external_tables = true;
 
     shared_context = Context::createShared();
-    global_context = Context::createGlobal(shared_context.get());
+    global_context = Context::createCatalog(shared_context.get());
 
-    global_context->makeGlobalContext();
+    global_context->makeSystemCatalogContext();
     global_context->setApplicationType(Context::ApplicationType::CLIENT);
 
     global_context->setSettings(cmd_settings);

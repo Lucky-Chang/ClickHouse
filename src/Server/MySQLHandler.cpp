@@ -283,7 +283,7 @@ void MySQLHandler::comFieldList(ReadBuffer & payload)
     packet.readPayloadWithUnpacked(payload);
     const auto session_context = session->sessionContext();
     String database = session_context->getCurrentDatabase();
-    StoragePtr table_ptr = DatabaseCatalog::instance().getTable({database, packet.table}, session_context);
+    StoragePtr table_ptr = session_context->getDatabaseCatalog().getTable({database, packet.table}, session_context);
     auto metadata_snapshot = table_ptr->getInMemoryMetadataPtr();
     for (const NameAndTypePair & column : metadata_snapshot->getColumns().getAll())
     {

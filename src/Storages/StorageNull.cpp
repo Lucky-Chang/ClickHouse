@@ -70,7 +70,7 @@ void StorageNull::alter(const AlterCommands & params, ContextPtr context, AlterL
 
     StorageInMemoryMetadata new_metadata = getInMemoryMetadata();
     params.apply(new_metadata, context);
-    DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(context, table_id, new_metadata);
+    context->getDatabaseCatalog().getDatabase(table_id.database_name)->alterTable(context, table_id, new_metadata);
     setInMemoryMetadata(new_metadata);
 }
 

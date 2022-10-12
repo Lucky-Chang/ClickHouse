@@ -310,7 +310,7 @@ StorageLiveView::StorageLiveView(
     auto inner_query_tmp = inner_query->clone();
     select_table_id = extractDependentTable(inner_query_tmp, getContext(), table_id_.table_name, inner_subquery);
 
-    DatabaseCatalog::instance().addDependency(select_table_id, table_id_);
+    live_view_context->getDatabaseCatalog().addDependency(select_table_id, table_id_);
 
     if (query.live_view_timeout)
     {
@@ -355,7 +355,7 @@ Block StorageLiveView::getHeader() const
 
 StoragePtr StorageLiveView::getParentStorage() const
 {
-    return DatabaseCatalog::instance().getTable(select_table_id, getContext());
+    return live_view_context->getDatabaseCatalog().getTable(select_table_id, getContext());
 }
 
 ASTPtr StorageLiveView::getInnerBlocksQuery()
@@ -446,7 +446,7 @@ bool StorageLiveView::getNewBlocks()
 void StorageLiveView::checkTableCanBeDropped() const
 {
     auto table_id = getStorageID();
-    Dependencies dependencies = DatabaseCatalog::instance().getDependencies(table_id);
+    Dependencies dependencies = live_view_context->getDatabaseCatalog().getDependencies(table_id);
     if (!dependencies.empty())
     {
         StorageID dependent_table_id = dependencies.front();
@@ -457,7 +457,7 @@ void StorageLiveView::checkTableCanBeDropped() const
 void StorageLiveView::startup()
 {
     if (is_temporary)
-        TemporaryLiveViewCleaner::instance().addView(std::static_pointer_cast<StorageLiveView>(shared_from_this()));
+        live_view_context->getDatabaseCatalog().getTemporaryLiveViewCleaner().addView(std::static_pointer_cast<StorageLiveView>(shared_from_this()));
 
     if (is_periodically_refreshed)
         periodic_refresh_task->activate();
@@ -470,7 +470,7 @@ void StorageLiveView::shutdown()
     if (is_periodically_refreshed)
         periodic_refresh_task->deactivate();
 
-    DatabaseCatalog::instance().removeDependency(select_table_id, getStorageID());
+    live_view_context->getDatabaseCatalog().removeDependency(select_table_id, getStorageID());
 }
 
 StorageLiveView::~StorageLiveView()
@@ -481,7 +481,7 @@ StorageLiveView::~StorageLiveView()
 void StorageLiveView::drop()
 {
     auto table_id = getStorageID();
-    DatabaseCatalog::instance().removeDependency(select_table_id, table_id);
+    live_view_context->getDatabaseCatalog().removeDependency(select_table_id, table_id);
 
     std::lock_guard lock(mutex);
     is_dropped = true;
@@ -523,7 +523,7 @@ void StorageLiveView::periodicRefreshTaskFunc()
 
 void StorageLiveView::refresh(bool grab_lock)
 {
-    // Lock is already acquired exclusively from InterperterAlterQuery.cpp InterpreterAlterQuery::execute() method.
+    // Lock is already acquired exclusively from InterpreterAlterQuery.cpp InterpreterAlterQuery::execute() method.
     // So, reacquiring lock is not needed and will result in an exception.
 
     if (grab_lock)

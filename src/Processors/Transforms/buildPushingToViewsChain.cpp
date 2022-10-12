@@ -202,7 +202,7 @@ Chain buildPushingToViewsChain(
         disable_deduplication_for_children = !no_destination && storage->supportsDeduplication();
 
     auto table_id = storage->getStorageID();
-    Dependencies dependencies = DatabaseCatalog::instance().getDependencies(table_id);
+    Dependencies dependencies = context->getDatabaseCatalog().getDependencies(table_id);
 
     /// We need special context for materialized views insertions
     ContextMutablePtr select_context;
@@ -232,7 +232,7 @@ Chain buildPushingToViewsChain(
 
     for (const auto & database_table : dependencies)
     {
-        auto dependent_table = DatabaseCatalog::instance().getTable(database_table, context);
+        auto dependent_table = context->getDatabaseCatalog().getTable(database_table, context);
         auto dependent_metadata_snapshot = dependent_table->getInMemoryMetadataPtr();
 
         ASTPtr query;

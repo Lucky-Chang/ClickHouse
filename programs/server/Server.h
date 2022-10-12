@@ -1,5 +1,6 @@
 #pragma once
 
+#include <map>
 #include <Server/IServer.h>
 
 #include <Daemon/BaseDaemon.h>
@@ -70,6 +71,7 @@ private:
     /// Updated/recent config, to compare http_handlers
     ConfigurationPtr latest_config;
 
+    std::map<String, ContextMutablePtr> catalog_contexts;
     Poco::Net::SocketAddress socketBindListen(
         const Poco::Util::AbstractConfiguration & config,
         Poco::Net::ServerSocket & socket,

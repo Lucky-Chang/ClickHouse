@@ -50,21 +50,21 @@ QueryPipeline InterpreterExistsQuery::executeImpl()
         {
             String database = getContext()->resolveDatabase(exists_query->getDatabase());
             getContext()->checkAccess(AccessType::SHOW_TABLES, database, exists_query->getTable());
-            result = DatabaseCatalog::instance().isTableExist({database, exists_query->getTable()}, getContext());
+            result = getContext()->getDatabaseCatalog().isTableExist({database, exists_query->getTable()}, getContext());
         }
     }
     else if ((exists_query = query_ptr->as<ASTExistsViewQuery>()))
     {
         String database = getContext()->resolveDatabase(exists_query->getDatabase());
         getContext()->checkAccess(AccessType::SHOW_TABLES, database, exists_query->getTable());
-        auto table = DatabaseCatalog::instance().tryGetTable({database, exists_query->getTable()}, getContext());
+        auto table = getContext()->getDatabaseCatalog().tryGetTable({database, exists_query->getTable()}, getContext());
         result = table && table->isView();
     }
     else if ((exists_query = query_ptr->as<ASTExistsDatabaseQuery>()))
     {
         String database = getContext()->resolveDatabase(exists_query->getDatabase());
         getContext()->checkAccess(AccessType::SHOW_DATABASES, database);
-        result = DatabaseCatalog::instance().isDatabaseExist(database);
+        result = getContext()->getDatabaseCatalog().isDatabaseExist(database);
     }
     else if ((exists_query = query_ptr->as<ASTExistsDictionaryQuery>()))
     {
@@ -72,7 +72,7 @@ QueryPipeline InterpreterExistsQuery::executeImpl()
             throw Exception("Temporary dictionaries are not possible.", ErrorCodes::SYNTAX_ERROR);
         String database = getContext()->resolveDatabase(exists_query->getDatabase());
         getContext()->checkAccess(AccessType::SHOW_DICTIONARIES, database, exists_query->getTable());
-        result = DatabaseCatalog::instance().isDictionaryExist({database, exists_query->getTable()});
+        result = getContext()->getDatabaseCatalog().isDictionaryExist({database, exists_query->getTable()});
     }
 
     return QueryPipeline(std::make_shared<SourceFromSingleChunk>(Block{{

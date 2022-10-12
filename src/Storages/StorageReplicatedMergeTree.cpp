@@ -1085,7 +1085,7 @@ void StorageReplicatedMergeTree::setTableStructure(const StorageID & table_id, c
     checkTTLExpressions(new_metadata, old_metadata);
     setProperties(new_metadata, old_metadata);
 
-    DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata);
+    getContext()->getDatabaseCatalog().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata);
 }
 
 
@@ -1988,7 +1988,7 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
 
     auto clone_data_parts_from_source_table = [&] () -> size_t
     {
-        source_table = DatabaseCatalog::instance().tryGetTable(source_table_id, getContext());
+        source_table = getContext()->getDatabaseCatalog().tryGetTable(source_table_id, getContext());
         if (!source_table)
         {
             LOG_DEBUG(log, "Can't use {} as source table for REPLACE PARTITION command. It does not exist.", source_table_id.getNameForLogs());
@@ -4621,7 +4621,7 @@ bool StorageReplicatedMergeTree::executeMetadataAlter(const StorageReplicatedMer
     auto table_id = getStorageID();
     auto alter_context = getContext();
 
-    auto database = DatabaseCatalog::instance().getDatabase(table_id.database_name);
+    auto database = getContext()->getDatabaseCatalog().getDatabase(table_id.database_name);
     bool is_in_replicated_database = database->getEngineName() == "Replicated";
 
     if (is_in_replicated_database)
@@ -4721,7 +4721,7 @@ void StorageReplicatedMergeTree::alter(
 
         changeSettings(future_metadata.settings_changes, table_lock_holder);
 
-        DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(query_context, table_id, future_metadata);
+        getContext()->getDatabaseCatalog().getDatabase(table_id.database_name)->alterTable(query_context, table_id, future_metadata);
         return;
     }
 
@@ -4800,7 +4800,7 @@ void StorageReplicatedMergeTree::alter(
             StorageInMemoryMetadata metadata_copy = *current_metadata;
             metadata_copy.settings_changes = future_metadata.settings_changes;
             changeSettings(metadata_copy.settings_changes, table_lock_holder);
-            DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(query_context, table_id, metadata_copy);
+            getContext()->getDatabaseCatalog().getDatabase(table_id.database_name)->alterTable(query_context, table_id, metadata_copy);
         }
 
         /// We can be sure, that in case of successful commit in zookeeper our
@@ -4856,7 +4856,7 @@ void StorageReplicatedMergeTree::alter(
             /// NOTE: IDatabase::alterTable(...) is called when executing ALTER_METADATA queue entry without query context,
             /// so we have to update metadata of DatabaseReplicated here.
             String metadata_zk_path = fs::path(txn->getDatabaseZooKeeperPath()) / "metadata" / escapeForFileName(table_id.table_name);
-            auto ast = DatabaseCatalog::instance().getDatabase(table_id.database_name)->getCreateTableQuery(table_id.table_name, query_context);
+            auto ast = getContext()->getDatabaseCatalog().getDatabase(table_id.database_name)->getCreateTableQuery(table_id.table_name, query_context);
             applyMetadataChangesToCreateQuery(ast, future_metadata);
             ops.emplace_back(zkutil::makeSetRequest(metadata_zk_path, getObjectDefinitionFromCreateQuery(ast), -1));
         }
@@ -5185,8 +5185,8 @@ void StorageReplicatedMergeTree::checkTableCanBeRenamed(const StorageID & new_na
     if (renaming_restrictions == RenamingRestrictions::DO_NOT_ALLOW)
     {
         auto old_name = getStorageID();
-        bool is_server_startup = Context::getGlobalContextInstance()->getApplicationType() == Context::ApplicationType::SERVER
-            && !Context::getGlobalContextInstance()->isServerCompletelyStarted();
+        bool is_server_startup = Context::getSystemCatalogContextInstance()->getApplicationType() == Context::ApplicationType::SERVER
+            && !Context::getSystemCatalogContextInstance()->isServerCompletelyStarted();
         bool move_to_atomic = old_name.uuid == UUIDHelpers::Nil && new_name.uuid != UUIDHelpers::Nil;
 
         bool likely_converting_ordinary_to_atomic = is_server_startup && move_to_atomic;

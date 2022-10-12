@@ -1,5 +1,7 @@
+#include <mutex>
 #include <Storages/LiveView/TemporaryLiveViewCleaner.h>
 
+#include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterDropQuery.h>
 #include <Parsers/ASTDropQuery.h>
@@ -18,7 +20,7 @@ namespace
 {
     void executeDropQuery(const StorageID & storage_id, ContextMutablePtr context)
     {
-        if (!DatabaseCatalog::instance().isTableExist(storage_id, context))
+        if (!context->getDatabaseCatalog().isTableExist(storage_id, context))
             return;
         try
         {
@@ -39,14 +41,18 @@ namespace
 }
 
 
-std::unique_ptr<TemporaryLiveViewCleaner> TemporaryLiveViewCleaner::the_instance;
+std::map<String, std::unique_ptr<TemporaryLiveViewCleaner>> TemporaryLiveViewCleaner::cleaners;
+std::mutex TemporaryLiveViewCleaner::cleaners_mutex;
 
-
-void TemporaryLiveViewCleaner::init(ContextMutablePtr global_context_)
+TemporaryLiveViewCleaner & TemporaryLiveViewCleaner::init(ContextMutablePtr global_context_, const String & user_catalog_name_)
 {
-    if (the_instance)
+    std::unique_lock<std::mutex> lock(cleaners_mutex);
+    if (cleaners.contains(user_catalog_name_))
+    {
         throw Exception("TemporaryLiveViewCleaner already initialized", ErrorCodes::LOGICAL_ERROR);
-    the_instance.reset(new TemporaryLiveViewCleaner(global_context_));
+    }
+    auto [it, _] = cleaners.emplace(user_catalog_name_, new TemporaryLiveViewCleaner(global_context_));
+    return *(it->second);
 }
 
 void TemporaryLiveViewCleaner::startup()
@@ -60,7 +66,9 @@ void TemporaryLiveViewCleaner::startup()
 
 void TemporaryLiveViewCleaner::shutdown()
 {
-    the_instance.reset();
+    std::unique_lock<std::mutex> lock(cleaners_mutex);
+    for (auto && [_, cleaner] : cleaners)
+        cleaner->stopBackgroundThread();
 }
 
 TemporaryLiveViewCleaner::TemporaryLiveViewCleaner(ContextMutablePtr global_context_) : WithMutableContext(global_context_)
@@ -126,7 +134,7 @@ void TemporaryLiveViewCleaner::backgroundThreadFunc()
                 break; /// It's not the time to check it yet.
 
             auto storage_id = storage->getStorageID();
-            if (!storage->hasUsers() && DatabaseCatalog::instance().getDependencies(storage_id).empty())
+            if (!storage->hasUsers() && getContext()->getDatabaseCatalog().getDependencies(storage_id).empty())
             {
                 /// No users and no dependencies so we can remove the storage.
                 storages_to_drop.emplace_back(storage_id);

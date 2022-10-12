@@ -227,7 +227,7 @@ void StorageEmbeddedRocksDB::mutate(const MutationCommands & commands, ContextPt
 
     auto metadata_snapshot = getInMemoryMetadataPtr();
     auto storage = getStorageID();
-    auto storage_ptr = DatabaseCatalog::instance().getTable(storage, context_);
+    auto storage_ptr = getContext()->getDatabaseCatalog().getTable(storage, context_);
 
     if (commands.front().type == MutationCommand::Type::DELETE)
     {

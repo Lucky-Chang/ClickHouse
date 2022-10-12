@@ -318,7 +318,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
     bool is_on_cluster = args.getLocalContext()->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
     bool is_replicated_database = args.getLocalContext()->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY &&
-        DatabaseCatalog::instance().getDatabase(args.table_id.database_name)->getEngineName() == "Replicated";
+        args.getLocalContext()->getDatabaseCatalog().getDatabase(args.table_id.database_name)->getEngineName() == "Replicated";
 
     if (replicated)
     {
@@ -410,7 +410,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         info.table_id = args.table_id;
         if (is_replicated_database)
         {
-            auto database = DatabaseCatalog::instance().getDatabase(args.table_id.database_name);
+            auto database = args.getLocalContext()->getDatabaseCatalog().getDatabase(args.table_id.database_name);
             info.shard = getReplicatedDatabaseShardName(database);
             info.replica = getReplicatedDatabaseReplicaName(database);
         }

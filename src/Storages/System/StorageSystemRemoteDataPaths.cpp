@@ -57,8 +57,11 @@ Pipe StorageSystemRemoteDataPaths::read(
         if (disk->isRemote())
         {
             std::vector<IDisk::LocalPathWithObjectStoragePaths> remote_paths_by_local_path;
-            disk->getRemotePathsRecursive("store", remote_paths_by_local_path);
-            disk->getRemotePathsRecursive("data", remote_paths_by_local_path);
+            for (auto && catalog_prefix : Context::getAllCatalogPrefixPaths())
+            {
+                disk->getRemotePathsRecursive(catalog_prefix + "store", remote_paths_by_local_path);
+                disk->getRemotePathsRecursive(catalog_prefix + "data", remote_paths_by_local_path);
+            }
 
             FileCachePtr cache;
             auto cache_base_path = disk->supportsCache() ? disk->getCacheBasePath() : "";

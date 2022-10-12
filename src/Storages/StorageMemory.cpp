@@ -310,7 +310,7 @@ void StorageMemory::mutate(const MutationCommands & commands, ContextPtr context
     std::lock_guard lock(mutex);
     auto metadata_snapshot = getInMemoryMetadataPtr();
     auto storage = getStorageID();
-    auto storage_ptr = DatabaseCatalog::instance().getTable(storage, context);
+    auto storage_ptr = context->getDatabaseCatalog().getTable(storage, context);
 
     /// When max_threads > 1, the order of returning blocks is uncertain,
     /// which will lead to inconsistency after updateBlockData.

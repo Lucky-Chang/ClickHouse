@@ -23,6 +23,7 @@
 
 #include <boost/container/flat_set.hpp>
 #include <functional>
+#include <map>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -126,6 +127,8 @@ class KeeperDispatcher;
 class Session;
 struct WriteSettings;
 
+class UserDefinedCatalog;
+class UserDefinedCatalogs;
 class IInputFormat;
 class IOutputFormat;
 using InputFormatPtr = std::shared_ptr<IInputFormat>;
@@ -217,6 +220,8 @@ private:
     std::shared_ptr<const SettingsConstraintsAndProfileIDs> settings_constraints_and_current_profiles;
     std::shared_ptr<const ContextAccess> access;
     std::shared_ptr<const EnabledRowPolicies> row_policies_of_initial_user;
+    std::optional<std::reference_wrapper<DatabaseCatalog>> catalog_reference;
+    std::optional<String> user_defined_catalog;
     String current_database;
     Settings settings;  /// Setting for query execution.
 
@@ -351,13 +356,11 @@ private:
     ContextWeakMutablePtr session_context;  /// Session context or nullptr. Could be equal to this.
     ContextWeakMutablePtr global_context;   /// Global context. Could be equal to this.
 
-    /// XXX: move this stuff to shared part instead.
-    ContextMutablePtr buffer_context;  /// Buffer context. Could be equal to this.
-
     /// A flag, used to distinguish between user query and internal query to a database engine (MaterializedPostgreSQL).
     bool is_internal_query = false;
 
-    inline static ContextPtr global_context_instance;
+    inline static ContextWeakPtr system_catalog_context_instance;
+    inline static std::map<String, ContextWeakMutablePtr> user_catalog_context_instances;
 
     /// A flag, used to mark if reader needs to apply deleted rows mask.
     bool apply_deleted_mask = true;
@@ -417,7 +420,7 @@ private:
 
 public:
     /// Create initial Context with ContextShared and etc.
-    static ContextMutablePtr createGlobal(ContextSharedPart * shared);
+    static ContextMutablePtr createCatalog(ContextSharedPart * shared);
     static ContextMutablePtr createCopy(const ContextWeakPtr & other);
     static ContextMutablePtr createCopy(const ContextMutablePtr & other);
     static ContextMutablePtr createCopy(const ContextPtr & other);
@@ -453,6 +456,23 @@ public:
     /// Global application configuration settings.
     void setConfig(const ConfigurationPtr & config);
     const Poco::Util::AbstractConfiguration & getConfigRef() const;
+
+    /// Global catalog configuration settings.
+    void setUserDefinedCatalogsConfig(const Poco::Util::AbstractConfiguration & config, const String & config_name = "user_catalogs");
+    std::shared_ptr<UserDefinedCatalogs> getUserDefinedCatalogs() const;
+    std::shared_ptr<UserDefinedCatalog> getUserDefinedCatalog(const String & catalog_name) const;
+    DatabaseCatalog & getDatabaseCatalog() const;
+    void switchGlobalContextToCatalog(const String & catalog_name);
+    void setDefaultCatalog(const String & catalog_name);
+    ContextPtr getDefaultCatalogContextInstance() const;
+    /// Get Catalog prefix path for data, metadata, metadata_dropped, store, shadow, etc.
+    /// eg: "shard_4_0/"
+    /// Empty for default catalog
+    String getCatalogPrefixPath() const;
+    String getCatalogPath() const;
+    static Strings getAllCatalogPrefixPaths();
+    std::optional<String> getCatalogShard() const;
+    std::optional<String> getCatalogReplica() const;
 
     AccessControl & getAccessControl();
     const AccessControl & getAccessControl() const;
@@ -606,7 +626,8 @@ public:
     void setCurrentDatabase(const String & name);
     /// Set current_database for global context. We don't validate that database
     /// exists because it should be set before databases loading.
-    void setCurrentDatabaseNameInGlobalContext(const String & name);
+    void setCurrentDatabaseNameInSystemCatalogContext(const String & name);
+    void setCurrentDatabaseNameInUserCatalogContext(const String & name);
     void setCurrentQueryId(const String & query_id);
 
     void killCurrentQuery();
@@ -707,7 +728,12 @@ public:
 
     ContextMutablePtr getGlobalContext() const;
 
-    static ContextPtr getGlobalContextInstance() { return global_context_instance; }
+    static ContextPtr getSystemCatalogContextInstance()
+    {
+        auto ptr = system_catalog_context_instance.lock();
+        if (!ptr) throw Exception("There is no global context or global context has expired", ErrorCodes::LOGICAL_ERROR);
+        return ptr;
+    }
 
     bool hasGlobalContext() const { return !global_context.expired(); }
     bool isGlobalContext() const
@@ -716,14 +742,13 @@ public:
         return ptr && ptr.get() == this;
     }
 
-    ContextMutablePtr getBufferContext() const;
-
     void setQueryContext(ContextMutablePtr context_) { query_context = context_; }
     void setSessionContext(ContextMutablePtr context_) { session_context = context_; }
 
     void makeQueryContext() { query_context = shared_from_this(); }
     void makeSessionContext() { session_context = shared_from_this(); }
-    void makeGlobalContext() { initGlobal(); global_context = shared_from_this(); }
+    void makeSystemCatalogContext() { initSystemCatalog(); global_context = shared_from_this(); }
+    void makeUserCatalogContext(const String & user_catalog_name) { initUserCatalog(user_catalog_name); global_context = shared_from_this(); }
 
     const Settings & getSettingsRef() const { return settings; }
 
@@ -1031,7 +1056,8 @@ public:
 private:
     std::unique_lock<std::recursive_mutex> getLock() const;
 
-    void initGlobal();
+    void initSystemCatalog();
+    void initUserCatalog(const String & user_catalog_name);
 
     /// Compute and set actual user settings, client_info.current_user should be set
     void calculateAccessRights();

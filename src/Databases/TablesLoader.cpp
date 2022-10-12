@@ -107,7 +107,7 @@ void TablesLoader::loadTables()
     removeUnresolvableDependencies(/* remove_loaded */ false);
 
     /// Update existing info (it's important for ATTACH DATABASE)
-    DatabaseCatalog::instance().addLoadingDependencies(metadata.dependencies_info);
+    global_context->getDatabaseCatalog().addLoadingDependencies(metadata.dependencies_info);
 
     /// Some tables were loaded by database with loadStoredObjects(...). Remove them from graph if necessary.
     removeUnresolvableDependencies(/* remove_loaded */ true);
@@ -131,7 +131,7 @@ void TablesLoader::removeUnresolvableDependencies(bool remove_loaded)
         if (metadata.parsed_tables.contains(dependency_name))
             return false;
         /// Table exists and it's already loaded
-        if (DatabaseCatalog::instance().isTableExist(StorageID(dependency_name.database, dependency_name.table), global_context))
+        if (global_context->getDatabaseCatalog().isTableExist(StorageID(dependency_name.database, dependency_name.table), global_context))
             return remove_loaded;
         /// It's XML dictionary.
         if (dependency_name.database == metadata.default_database &&

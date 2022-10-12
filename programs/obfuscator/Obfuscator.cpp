@@ -1293,9 +1293,9 @@ try
 
     /// Create the header block
     SharedContextHolder shared_context = Context::createShared();
-    auto context = Context::createGlobal(shared_context.get());
+    auto context = Context::createCatalog(shared_context.get());
     auto context_const = WithContext(context).getContext();
-    context->makeGlobalContext();
+    context->makeSystemCatalogContext();
 
     Block header;
 

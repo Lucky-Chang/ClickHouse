@@ -25,7 +25,7 @@ struct StoredObject
         bool object_bypasses_cache = false);
 
     /// Optional hint for cache. Use delayed initialization
-    /// because somecache hint implementation requires it.
+    /// because some cache hint implementation requires it.
     using PathKeyForCacheCreator = std::function<std::string(const std::string &)>;
     PathKeyForCacheCreator path_key_for_cache_creator;
 

@@ -230,7 +230,7 @@ StoragePtr JoinedTables::getLeftTableStorage()
     }
 
     /// Read from table. Even without table expression (implicit SELECT ... FROM system.one).
-    return DatabaseCatalog::instance().getTable(table_id, context);
+    return context->getDatabaseCatalog().getTable(table_id, context);
 }
 
 bool JoinedTables::resolveTables()
@@ -314,7 +314,7 @@ std::shared_ptr<TableJoin> JoinedTables::makeTableJoin(const ASTSelectQuery & se
     if (table_to_join.database_and_table_name)
     {
         auto joined_table_id = context->resolveStorageID(table_to_join.database_and_table_name);
-        StoragePtr storage = DatabaseCatalog::instance().tryGetTable(joined_table_id, context);
+        StoragePtr storage = context->getDatabaseCatalog().tryGetTable(joined_table_id, context);
         if (storage)
         {
             if (auto storage_join = std::dynamic_pointer_cast<StorageJoin>(storage); storage_join)

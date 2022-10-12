@@ -86,7 +86,7 @@ const TableFunctionMerge::DBToTableSetMap & TableFunctionMerge::getSourceDatabas
     else
     {
         OptimizedRegularExpression database_re(source_database_name_or_regexp);
-        auto databases = DatabaseCatalog::instance().getDatabases();
+        auto databases = context->getDatabaseCatalog().getDatabases();
 
         for (const auto & db : databases)
             if (database_re.match(db.first))
@@ -105,7 +105,7 @@ ColumnsDescription TableFunctionMerge::getActualTableStructure(ContextPtr contex
     {
         for (const auto & table : db_with_tables.second)
         {
-            auto storage = DatabaseCatalog::instance().tryGetTable(StorageID{db_with_tables.first, table}, context);
+            auto storage = context->getDatabaseCatalog().tryGetTable(StorageID{db_with_tables.first, table}, context);
             if (storage)
                 return ColumnsDescription{storage->getInMemoryMetadataPtr()->getColumns().getAllPhysical()};
         }
@@ -139,7 +139,7 @@ TableFunctionMerge::getMatchedTablesWithAccess(const String & database_name, con
 
     auto access = context->getAccess();
 
-    auto database = DatabaseCatalog::instance().getDatabase(database_name);
+    auto database = context->getDatabaseCatalog().getDatabase(database_name);
 
     bool granted_show_on_all_tables = access->isGranted(AccessType::SHOW_TABLES, database_name);
     bool granted_select_on_all_tables = access->isGranted(AccessType::SELECT, database_name);
