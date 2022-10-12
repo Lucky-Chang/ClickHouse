@@ -15,6 +15,7 @@ struct ConnectionParameters
 {
     std::string host;
     UInt16 port{};
+    std::string default_catalog;
     std::string default_database;
     std::string user;
     std::string password;

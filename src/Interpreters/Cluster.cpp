@@ -49,7 +49,7 @@ inline bool isLocalImpl(const Cluster::Address & address, const Poco::Net::Socke
     /// Also, replica is considered non-local, if it has default database set
     ///  (only reason is to avoid query rewrite).
 
-    return address.default_database.empty() && isLocalAddress(resolved_address, clickhouse_port);
+    return address.default_catalog.empty() && address.default_database.empty() && isLocalAddress(resolved_address, clickhouse_port);
 }
 
 void concatInsertPath(std::string & insert_path, const std::string & dir_name)
@@ -105,6 +105,7 @@ Cluster::Address::Address(
 
     user = config.getString(config_prefix + ".user", "default");
     password = config.getString(config_prefix + ".password", "");
+    default_catalog = config.getString(config_prefix + ".default_catalog", "");
     default_database = config.getString(config_prefix + ".default_database", "");
     secure = ConfigHelper::getBool(config, config_prefix + ".secure", false, /* empty_as */true) ? Protocol::Secure::Enable : Protocol::Secure::Disable;
     priority = config.getInt(config_prefix + ".priority", 1);
@@ -127,6 +128,7 @@ Cluster::Address::Address(
 
 Cluster::Address::Address(
     const String & host_port_,
+    const String & default_catalog_,
     const String & user_,
     const String & password_,
     UInt16 clickhouse_port,
@@ -137,7 +139,7 @@ Cluster::Address::Address(
     UInt32 replica_index_,
     String cluster_name_,
     String cluster_secret_)
-    : user(user_), password(password_)
+    : user(user_), password(password_), default_catalog(default_catalog_)
 {
     bool can_be_local = true;
     std::pair<std::string, UInt16> parsed_host_port;
@@ -223,6 +225,7 @@ String Cluster::Address::toFullString(bool use_compact_format) const
             escapeForFileName(user)
             + (password.empty() ? "" : (':' + escapeForFileName(password))) + '@'
             + escapeForFileName(host_name) + ':' + std::to_string(port)
+            + (default_catalog.empty() ? "" : ('(' + escapeForFileName(default_catalog)))
             + (default_database.empty() ? "" : ('#' + escapeForFileName(default_database)))
             + ((secure == Protocol::Secure::Enable) ? "+secure" : "");
     }
@@ -270,8 +273,10 @@ Cluster::Address Cluster::Address::fromFullString(const String & full_string)
         if (!host_end)
             throw Exception("Incorrect address '" + full_string + "', it does not contain port", ErrorCodes::SYNTAX_ERROR);
 
+        const char * has_catalog = strchr(full_string.data(), '(');
         const char * has_db = strchr(full_string.data(), '#');
-        const char * port_end = has_db ? has_db : address_end;
+        const char * catalog_end = has_db ? has_db : address_end;
+        const char * port_end = has_catalog ? has_catalog : catalog_end;
 
         Address address;
         address.secure = secure;
@@ -279,6 +284,7 @@ Cluster::Address Cluster::Address::fromFullString(const String & full_string)
         address.host_name = unescapeForFileName(std::string(user_pw_end + 1, host_end));
         address.user = unescapeForFileName(std::string(address_begin, has_pw ? colon : user_pw_end));
         address.password = has_pw ? unescapeForFileName(std::string(colon + 1, user_pw_end)) : std::string();
+        address.default_catalog = has_catalog ? unescapeForFileName(std::string(has_catalog + 1, catalog_end)) : std::string();
         address.default_database = has_db ? unescapeForFileName(std::string(has_db + 1, address_end)) : std::string();
         // address.priority ignored
         return address;
@@ -424,7 +430,7 @@ Cluster::Cluster(const Poco::Util::AbstractConfiguration & config,
 
             auto pool = ConnectionPoolFactory::instance().get(
                 settings.distributed_connections_pool_size,
-                address.host_name, address.port,
+                address.host_name, address.port, address.default_catalog,
                 address.default_database, address.user, address.password, address.quota_key,
                 address.cluster, address.cluster_secret,
                 "server", address.compression,
@@ -498,7 +504,7 @@ Cluster::Cluster(const Poco::Util::AbstractConfiguration & config,
             {
                 auto replica_pool = ConnectionPoolFactory::instance().get(
                     settings.distributed_connections_pool_size,
-                    replica.host_name, replica.port,
+                    replica.host_name, replica.port, replica.default_catalog,
                     replica.default_database, replica.user, replica.password, replica.quota_key,
                     replica.cluster, replica.cluster_secret,
                     "server", replica.compression,
@@ -562,8 +568,12 @@ Cluster::Cluster(
     {
         Addresses current;
         for (const auto & replica : shard)
+        {
+            size_t colon = replica.find_last_of('/');
+            bool has_default_catalog = (colon != String::npos);
             current.emplace_back(
-                replica,
+                has_default_catalog ? replica.substr(0, colon) : replica,
+                has_default_catalog ? replica.substr(colon + 1) : "",
                 username,
                 password,
                 clickhouse_port,
@@ -574,6 +584,7 @@ Cluster::Cluster(
                 current.size() + 1,
                 cluster_name,
                 cluster_secret);
+        }
 
         addresses_with_failover.emplace_back(current);
 
@@ -586,7 +597,7 @@ Cluster::Cluster(
         {
             auto replica_pool = ConnectionPoolFactory::instance().get(
                         settings.distributed_connections_pool_size,
-                        replica.host_name, replica.port,
+                        replica.host_name, replica.port, replica.default_catalog,
                         replica.default_database, replica.user, replica.password, replica.quota_key,
                         replica.cluster, replica.cluster_secret,
                         "server", replica.compression, replica.secure, replica.priority);
@@ -696,6 +707,7 @@ Cluster::Cluster(Cluster::ReplicasAsShardsTag, const Cluster & from, const Setti
                 settings.distributed_connections_pool_size,
                 address.host_name,
                 address.port,
+                address.default_catalog,
                 address.default_database,
                 address.user,
                 address.password,
@@ -817,10 +829,11 @@ bool Cluster::maybeCrossReplication() const
     if (addresses_with_failover.empty())
         return false;
 
+    const String & catalog_name = addresses_with_failover.front().front().default_catalog;
     const String & database_name = addresses_with_failover.front().front().default_database;
     for (const auto & shard : addresses_with_failover)
         for (const auto & replica : shard)
-            if (replica.default_database != database_name)
+            if (replica.default_catalog == catalog_name && replica.default_database != database_name)
                 return true;
 
     return false;

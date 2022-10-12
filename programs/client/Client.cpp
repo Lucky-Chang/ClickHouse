@@ -262,6 +262,7 @@ try
     }
     else
     {
+        connection->setDefaultCatalog(connection_parameters.default_catalog);
         connection->setDefaultDatabase(connection_parameters.default_database);
 
         runNonInteractive();
@@ -325,6 +326,8 @@ void Client::connect()
 
             if (is_interactive)
                 std::cout << "Connecting to "
+                          << (!connection_parameters.default_catalog.empty() ? "catalog " + connection_parameters.default_catalog + ", "
+                                                                              : "")
                           << (!connection_parameters.default_database.empty() ? "database " + connection_parameters.default_database + " at "
                                                                               : "")
                           << connection_parameters.host << ":" << connection_parameters.port

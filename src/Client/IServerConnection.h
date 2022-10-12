@@ -68,6 +68,8 @@ public:
 
     virtual Type getConnectionType() const = 0;
 
+    virtual void setDefaultCatalog(const String & catalog) = 0;
+
     virtual void setDefaultDatabase(const String & database) = 0;
 
     virtual void getServerVersion(

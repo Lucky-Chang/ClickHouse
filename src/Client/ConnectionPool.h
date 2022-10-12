@@ -51,6 +51,7 @@ public:
     ConnectionPool(unsigned max_connections_,
             const String & host_,
             UInt16 port_,
+            const String & default_catalog_,
             const String & default_database_,
             const String & user_,
             const String & password_,
@@ -65,6 +66,7 @@ public:
         &Poco::Logger::get("ConnectionPool (" + host_ + ":" + toString(port_) + ")")),
         host(host_),
         port(port_),
+        default_catalog(default_catalog_),
         default_database(default_database_),
         user(user_),
         password(password_),
@@ -113,7 +115,7 @@ protected:
     ConnectionPtr allocObject() override
     {
         return std::make_shared<Connection>(
-            host, port,
+            host, port, default_catalog,
             default_database, user, password, quota_key,
             cluster, cluster_secret,
             client_name, compression, secure);
@@ -122,6 +124,7 @@ protected:
 private:
     String host;
     UInt16 port;
+    String default_catalog;
     String default_database;
     String user;
     String password;
@@ -149,6 +152,7 @@ public:
         unsigned max_connections;
         String host;
         UInt16 port;
+        String default_catalog;
         String default_database;
         String user;
         String password;
@@ -172,6 +176,7 @@ public:
     get(unsigned max_connections,
         String host,
         UInt16 port,
+        String default_catalog,
         String default_database,
         String user,
         String password,
@@ -190,7 +195,7 @@ private:
 
 inline bool operator==(const ConnectionPoolFactory::Key & lhs, const ConnectionPoolFactory::Key & rhs)
 {
-    return lhs.max_connections == rhs.max_connections && lhs.host == rhs.host && lhs.port == rhs.port
+    return lhs.max_connections == rhs.max_connections && lhs.host == rhs.host && lhs.port == rhs.port && lhs.default_catalog == rhs.default_catalog
         && lhs.default_database == rhs.default_database && lhs.user == rhs.user && lhs.password == rhs.password
         && lhs.cluster == rhs.cluster && lhs.cluster_secret == rhs.cluster_secret && lhs.client_name == rhs.client_name
         && lhs.compression == rhs.compression && lhs.secure == rhs.secure && lhs.priority == rhs.priority;

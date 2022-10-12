@@ -102,6 +102,7 @@ public:
         UInt32 shard_index{}; /// shard serial number in configuration file, starting from 1.
         UInt32 replica_index{}; /// replica serial number in this shard, starting from 1; zero means no replicas.
 
+        String default_catalog;
         /// This database is selected when no database is specified for Distributed table
         String default_database;
         /// The locality is determined at the initialization, and is not changed even if DNS is changed
@@ -125,6 +126,7 @@ public:
 
         Address(
             const String & host_port_,
+            const String & default_catalog_,
             const String & user_,
             const String & password_,
             UInt16 clickhouse_port,

@@ -484,6 +484,11 @@ void LocalConnection::getServerVersion(
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented");
 }
 
+void LocalConnection::setDefaultCatalog(const String & /*catalog*/)
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented");
+}
+
 void LocalConnection::setDefaultDatabase(const String & database)
 {
     current_database = database;

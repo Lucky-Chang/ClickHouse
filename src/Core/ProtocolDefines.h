@@ -68,3 +68,5 @@
 
 /// The server will send query elapsed run time in the Progress packet.
 #define DBMS_MIN_PROTOCOL_VERSION_WITH_SERVER_QUERY_TIME_IN_PROGRESS 54460
+
+#define DBMS_PROTOCOL_VERSION_FLAG_WITH_DEFAULT_CATALOG (0x1ULL << 32)

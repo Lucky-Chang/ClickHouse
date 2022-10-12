@@ -51,6 +51,7 @@ namespace
             MAX_CONNECTIONS,
             configuration.host,
             configuration.port,
+            "",
             configuration.db,
             configuration.user,
             configuration.password,

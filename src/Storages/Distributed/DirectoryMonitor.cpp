@@ -536,6 +536,7 @@ ConnectionPoolPtr StorageDistributedDirectoryMonitor::createPool(const std::stri
                     address.password == replica_address.password &&
                     address.host_name == replica_address.host_name &&
                     address.port == replica_address.port &&
+                    address.default_catalog == replica_address.default_catalog &&
                     address.default_database == replica_address.default_database &&
                     address.secure == replica_address.secure)
                 {
@@ -548,6 +549,7 @@ ConnectionPoolPtr StorageDistributedDirectoryMonitor::createPool(const std::stri
             1, /* max_connections */
             address.host_name,
             address.port,
+            address.default_catalog,
             address.default_database,
             address.user,
             address.password,

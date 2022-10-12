@@ -9,6 +9,7 @@ ConnectionPoolPtr ConnectionPoolFactory::get(
     unsigned max_connections,
     String host,
     UInt16 port,
+    String default_catalog,
     String default_database,
     String user,
     String password,
@@ -21,7 +22,7 @@ ConnectionPoolPtr ConnectionPoolFactory::get(
     Int64 priority)
 {
     Key key{
-        max_connections, host, port, default_database, user, password, quota_key, cluster, cluster_secret, client_name, compression, secure, priority};
+        max_connections, host, port, default_catalog, default_database, user, password, quota_key, cluster, cluster_secret, client_name, compression, secure, priority};
 
     std::lock_guard lock(mutex);
     auto [it, inserted] = pools.emplace(key, ConnectionPoolPtr{});
@@ -35,6 +36,7 @@ ConnectionPoolPtr ConnectionPoolFactory::get(
             max_connections,
             host,
             port,
+            default_catalog,
             default_database,
             user,
             password,
@@ -66,6 +68,7 @@ size_t ConnectionPoolFactory::KeyHash::operator()(const ConnectionPoolFactory::K
     hash_combine(seed, hash_value(k.max_connections));
     hash_combine(seed, hash_value(k.host));
     hash_combine(seed, hash_value(k.port));
+    hash_combine(seed, hash_value(k.default_catalog));
     hash_combine(seed, hash_value(k.default_database));
     hash_combine(seed, hash_value(k.user));
     hash_combine(seed, hash_value(k.password));

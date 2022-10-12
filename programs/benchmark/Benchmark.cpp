@@ -60,7 +60,7 @@ class Benchmark : public Poco::Util::Application
 public:
     Benchmark(unsigned concurrency_, double delay_,
             Strings && hosts_, Ports && ports_, bool round_robin_,
-            bool cumulative_, bool secure_, const String & default_database_,
+            bool cumulative_, bool secure_, const String & default_catalog_, const String & default_database_,
             const String & user_, const String & password_, const String & quota_key_, const String & stage,
             bool randomize_, size_t max_iterations_, double max_time_,
             const String & json_path_, size_t confidence_,
@@ -90,7 +90,7 @@ public:
 
             connections.emplace_back(std::make_unique<ConnectionPool>(
                 concurrency,
-                cur_host, cur_port,
+                cur_host, cur_port, default_catalog_,
                 default_database_, user_, password_, quota_key_,
                 /* cluster_= */ "",
                 /* cluster_secret_= */ "",
@@ -644,6 +644,7 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
             ("user,u",        value<std::string>()->default_value(env_user_str.value_or("default")), "")
             ("password",      value<std::string>()->default_value(env_password_str.value_or("")), "")
             ("quota_key",     value<std::string>()->default_value(env_quota_key_str.value_or("")), "")
+            ("catalog", value<std::string>()->default_value(""), "")
             ("database", value<std::string>()->default_value("default"), "")
             ("stacktrace", "print stack traces of exceptions")
             ("confidence", value<size_t>()->default_value(5), "set the level of confidence for T-test [0=80%, 1=90%, 2=95%, 3=98%, 4=99%, 5=99.5%(default)")
@@ -690,6 +691,7 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
             options.count("roundrobin"),
             options.count("cumulative"),
             options.count("secure"),
+            options["catalog"].as<std::string>(),
             options["database"].as<std::string>(),
             options["user"].as<std::string>(),
             options["password"].as<std::string>(),

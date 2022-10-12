@@ -52,6 +52,7 @@
 #include <Processors/Sinks/SinkToStorage.h>
 
 #include "Core/Protocol.h"
+#include "Core/ProtocolDefines.h"
 #include "TCPHandler.h"
 
 #include <Common/config_version.h>
@@ -163,6 +164,9 @@ void TCPHandler::runImpl()
             /// So it's better to update the connection settings for flexibility.
             extractConnectionSettingsFromContext(session->sessionContext());
 
+            /// When connecting, the default catalog could be specified.
+            if (!default_catalog.empty())
+                session->sessionContext()->switchGlobalContextToCatalog(default_catalog);
             /// When connecting, the default database could be specified.
             if (!default_database.empty())
                 session->sessionContext()->setCurrentDatabase(default_database);
@@ -801,7 +805,9 @@ void TCPHandler::processTablesStatusRequest()
         /// In interserver mode session context does not exists, because authentication is done for each query.
         /// We also cannot create query context earlier, because it cannot be created before authentication,
         /// but query is not received yet. So we have to do this trick.
-        ContextMutablePtr fake_interserver_context = Context::createCopy(server.context());
+        ContextMutablePtr fake_interserver_context = Context::createCopy(server.context()->getDefaultCatalogContextInstance());
+        if (!default_catalog.empty())
+            fake_interserver_context->switchGlobalContextToCatalog(default_catalog);
         if (!default_database.empty())
             fake_interserver_context->setCurrentDatabase(default_database);
         context_to_resolve_table_names = fake_interserver_context;
@@ -1103,6 +1109,11 @@ void TCPHandler::receiveHello()
     readVarUInt(client_version_minor, *in);
     // NOTE For backward compatibility of the protocol, client cannot send its version_patch.
     readVarUInt(client_tcp_protocol_version, *in);
+    if (client_tcp_protocol_version & DBMS_PROTOCOL_VERSION_FLAG_WITH_DEFAULT_CATALOG)
+    {
+        client_tcp_protocol_version ^= DBMS_PROTOCOL_VERSION_FLAG_WITH_DEFAULT_CATALOG;
+        readStringBinary(default_catalog, *in);
+    }
     readStringBinary(default_database, *in);
     readStringBinary(user, *in);
     readStringBinary(password, *in);
@@ -1114,6 +1125,7 @@ void TCPHandler::receiveHello()
         client_name,
         client_version_major, client_version_minor, client_version_patch,
         client_tcp_protocol_version,
+        (!default_catalog.empty() ? ", catalog: " + default_catalog : ""),
         (!default_database.empty() ? ", database: " + default_database : ""),
         (!user.empty() ? ", user: " + user : "")
     );
@@ -1419,6 +1431,9 @@ void TCPHandler::receiveQuery()
 
     query_context = session->makeQueryContext(std::move(client_info));
 
+    /// Sets the default catalog if it wasn't set earlier for the session context.
+    if (is_interserver_mode && !default_catalog.empty())
+        query_context->switchGlobalContextToCatalog(default_catalog);
     /// Sets the default database if it wasn't set earlier for the session context.
     if (is_interserver_mode && !default_database.empty())
         query_context->setCurrentDatabase(default_database);

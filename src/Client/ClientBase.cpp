@@ -2236,6 +2236,7 @@ void ClientBase::init(int argc, char ** argv)
         ("config-file,C", po::value<std::string>(), "config-file path")
         ("queries-file", po::value<std::vector<std::string>>()->multitoken(),
             "file path with queries to execute; multiple files can be specified (--queries-file file1 file2...)")
+        ("catalog,c", po::value<std::string>(), "catalog")
         ("database,d", po::value<std::string>(), "database")
         ("history_file", po::value<std::string>(), "path to history file")
 
@@ -2325,6 +2326,8 @@ void ClientBase::init(int argc, char ** argv)
         config().setString("query", options["query"].as<std::string>());
     if (options.count("query_id"))
         config().setString("query_id", options["query_id"].as<std::string>());
+    if (options.count("catalog"))
+        config().setString("catalog", options["catalog"].as<std::string>());
     if (options.count("database"))
         config().setString("database", options["database"].as<std::string>());
     if (options.count("config-file"))

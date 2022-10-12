@@ -226,9 +226,15 @@ void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, ContextPtr
         /// Check host and port on affiliation allowed hosts.
         for (const auto & hosts : names)
         {
-            for (const auto & host : hosts)
+            for (const auto & host_with_qualifier : hosts)
             {
-                size_t colon = host.find(':');
+                std::string host;
+                size_t colon = host_with_qualifier.find('/');
+                if (colon != String::npos)
+                    host = host_with_qualifier.substr(0, colon);
+                else
+                    host = host_with_qualifier;
+                colon = host.find(':');
                 if (colon == String::npos)
                     context->getRemoteHostFilter().checkHostAndPort(
                         host,

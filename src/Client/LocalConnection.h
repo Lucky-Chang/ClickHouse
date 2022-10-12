@@ -76,6 +76,8 @@ public:
         bool send_profile_events = false,
         const String & server_display_name = "");
 
+    void setDefaultCatalog(const String & catalog) override;
+
     void setDefaultDatabase(const String & database) override;
 
     void getServerVersion(const ConnectionTimeouts & timeouts,

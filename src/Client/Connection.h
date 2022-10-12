@@ -49,6 +49,7 @@ class Connection : public IServerConnection
 
 public:
     Connection(const String & host_, UInt16 port_,
+        const String & default_catalog_,
         const String & default_database_,
         const String & user_, const String & password_,
         const String & quota_key_,
@@ -70,6 +71,9 @@ public:
         throttler = throttler_;
     }
 
+    /// Change default catalog. Changes will take effect on next reconnect.
+    void setDefaultCatalog(const String & catalog) override;
+
     /// Change default database. Changes will take effect on next reconnect.
     void setDefaultDatabase(const String & database) override;
 
@@ -89,6 +93,7 @@ public:
     const String & getDescription() const override;
     const String & getHost() const;
     UInt16 getPort() const;
+    const String & getDefaultCatalog() const;
     const String & getDefaultDatabase() const;
 
     Protocol::Compression getCompression() const { return compression; }
@@ -157,6 +162,7 @@ public:
 private:
     String host;
     UInt16 port;
+    String default_catalog;
     String default_database;
     String user;
     String password;

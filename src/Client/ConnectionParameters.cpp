@@ -32,6 +32,7 @@ ConnectionParameters::ConnectionParameters(const Poco::Util::AbstractConfigurati
     bool is_secure = config.getBool("secure", false);
     security = is_secure ? Protocol::Secure::Enable : Protocol::Secure::Disable;
 
+    default_catalog = config.getString("catalog", "");
     default_database = config.getString("database", "");
 
     /// changed the default value to "default" to fix the issue when the user in the prompt is blank

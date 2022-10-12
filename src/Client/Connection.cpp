@@ -63,6 +63,7 @@ namespace ErrorCodes
 Connection::~Connection() = default;
 
 Connection::Connection(const String & host_, UInt16 port_,
+    const String & default_catalog_,
     const String & default_database_,
     const String & user_, const String & password_,
     const String & quota_key_,
@@ -71,7 +72,7 @@ Connection::Connection(const String & host_, UInt16 port_,
     const String & client_name_,
     Protocol::Compression compression_,
     Protocol::Secure secure_)
-    : host(host_), port(port_), default_database(default_database_)
+    : host(host_), port(port_), default_catalog(default_catalog_), default_database(default_database_)
     , user(user_), password(password_), quota_key(quota_key_)
     , cluster(cluster_)
     , cluster_secret(cluster_secret_)
@@ -93,8 +94,8 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
 {
     try
     {
-        LOG_TRACE(log_wrapper.get(), "Connecting. Database: {}. User: {}{}{}",
-            default_database.empty() ? "(not specified)" : default_database,
+        LOG_TRACE(log_wrapper.get(), "Connecting. Catalog: {}. Database: {}. User: {}{}{}",
+            default_database.empty() ? "(not specified)" : default_catalog, default_database,
             user,
             static_cast<bool>(secure) ? ". Secure" : "",
             static_cast<bool>(compression) ? "" : ". Uncompressed");
@@ -237,18 +238,29 @@ void Connection::sendHello()
         return false;
     };
 
-    if (has_control_character(default_database)
+    if (has_control_character(default_catalog)
+        || has_control_character(default_database)
         || has_control_character(user)
         || has_control_character(password))
-        throw Exception("Parameters 'default_database', 'user' and 'password' must not contain ASCII control characters", ErrorCodes::BAD_ARGUMENTS);
+        throw Exception("Parameters 'default_catalog', 'default_database', 'user' and 'password' must not contain ASCII control characters", ErrorCodes::BAD_ARGUMENTS);
 
     writeVarUInt(Protocol::Client::Hello, *out);
     writeStringBinary((DBMS_NAME " ") + client_name, *out);
     writeVarUInt(DBMS_VERSION_MAJOR, *out);
     writeVarUInt(DBMS_VERSION_MINOR, *out);
     // NOTE For backward compatibility of the protocol, client cannot send its version_patch.
-    writeVarUInt(DBMS_TCP_PROTOCOL_VERSION, *out);
-    writeStringBinary(default_database, *out);
+    if (!default_catalog.empty())
+    {
+        writeVarUInt(DBMS_TCP_PROTOCOL_VERSION | DBMS_PROTOCOL_VERSION_FLAG_WITH_DEFAULT_CATALOG, *out);
+        writeStringBinary(default_catalog, *out);
+        writeStringBinary(default_database, *out);
+    }
+    else
+    {
+        writeVarUInt(DBMS_TCP_PROTOCOL_VERSION, *out);
+        writeStringBinary(default_database, *out);
+    }
+
     /// If interserver-secret is used, one do not need password
     /// (NOTE we do not check for DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET, since we cannot ignore inter-server secret if it was requested)
     if (!cluster_secret.empty())
@@ -317,6 +329,16 @@ void Connection::receiveHello()
         disconnect();
         throwUnexpectedPacket(packet_type, "Hello or Exception");
     }
+}
+
+void Connection::setDefaultCatalog(const String & catalog)
+{
+    default_catalog = catalog;
+}
+
+const String & Connection::getDefaultCatalog() const
+{
+    return default_catalog;
 }
 
 void Connection::setDefaultDatabase(const String & database)
@@ -1121,6 +1143,7 @@ ServerConnectionPtr Connection::createConnection(const ConnectionParameters & pa
     return std::make_unique<Connection>(
         parameters.host,
         parameters.port,
+        parameters.default_catalog,
         parameters.default_database,
         parameters.user,
         parameters.password,
