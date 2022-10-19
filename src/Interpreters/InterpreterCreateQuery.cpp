@@ -1538,7 +1538,21 @@ void InterpreterCreateQuery::prepareOnClusterQuery(ASTCreateQuery & create, Cont
 
     /// For CREATE query generate UUID on initiator, so it will be the same on all hosts.
     /// It will be ignored if database does not support UUIDs.
-    generateUUIDForTable(create);
+    /// In some special cases, table / dictionary UUID should be different between local shards.
+    /// For example: create a dict with source refer to local table in currentCatalog().
+    /// Dictionary loader has global scope, the sql-created dictionary content is unique-identified by it's UUID.
+    /// CREATE DICTIONARY dictionary_to_current_shard_local_table on cluster default
+    /// (
+    ///     a UInt64,
+    ///     b String
+    /// )
+    /// PRIMARY KEY a
+    /// SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() CATALOG currentCatalog() DATABASE 'default' TABLE 'test'))
+    /// LAYOUT(FLAT())
+    /// LIFETIME(MIN 0 MAX 1000)
+    /// COMMENT 'The local table dictionary';
+    if (local_context->getSettingsRef().assign_table_uuid_for_on_cluster_query)
+        generateUUIDForTable(create);
 
     /// For cross-replication cluster we cannot use UUID in replica path.
     String cluster_name_expanded = local_context->getMacros()->expand(cluster_name);

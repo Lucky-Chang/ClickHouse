@@ -28,10 +28,10 @@ namespace ErrorCodes
     extern const int DNS_ERROR;
 }
 
-HostID HostID::fromString(const String & host_port_str)
+HostID HostID::fromString(const String & host_port_catalog_str)
 {
     HostID res;
-    std::tie(res.host_name, res.port) = Cluster::Address::fromString(host_port_str);
+    std::tie(res.host_name, res.port, res.catalog) = Cluster::Address::fromString(host_port_catalog_str);
     return res;
 }
 
@@ -51,7 +51,7 @@ bool HostID::isLocalAddress(UInt16 clickhouse_port) const
 void DDLLogEntry::assertVersion() const
 {
     if (version == 0
-    /// NORMALIZE_CREATE_ON_INITIATOR_VERSION does not change the entry format, it uses versioin 2, so there shouldn't be such version
+    /// NORMALIZE_CREATE_ON_INITIATOR_VERSION does not change the entry format, it uses version 2, so there shouldn't be such version
     || version == NORMALIZE_CREATE_ON_INITIATOR_VERSION
     || version > DDL_ENTRY_FORMAT_MAX_VERSION)
         throw Exception(ErrorCodes::UNKNOWN_FORMAT_VERSION, "Unknown DDLLogEntry format version: {}."
@@ -197,6 +197,9 @@ bool DDLTask::findCurrentHostID(ContextPtr global_context, Poco::Logger * log)
 
             if (!is_local_port)
                 continue;
+
+            if (host.catalog != global_context->getUserDefinedCatalogName().value_or("default"))
+                continue;
         }
         catch (const Exception & e)
         {
@@ -284,7 +287,7 @@ bool DDLTask::tryFindHostInCluster()
         {
             const Cluster::Address & address = shards[shard_num][replica_num];
 
-            if (address.host_name == host_id.host_name && address.port == host_id.port)
+            if (address.host_name == host_id.host_name && address.port == host_id.port && address.default_catalog == host_id.catalog)
             {
                 if (found_exact_match)
                 {
@@ -341,7 +344,7 @@ bool DDLTask::tryFindHostInClusterViaResolving(ContextPtr context)
             const Cluster::Address & address = shards[shard_num][replica_num];
 
             if (auto resolved = address.getResolvedAddress(); resolved
-                && (isLocalAddress(*resolved, context->getTCPPort())
+                && address.default_catalog == host_id.catalog && (isLocalAddress(*resolved, context->getTCPPort())
                     || (context->getTCPPortSecure() && isLocalAddress(*resolved, *context->getTCPPortSecure()))))
             {
                 if (found_via_resolving)
@@ -477,14 +480,6 @@ void ZooKeeperMetadataTransaction::commit()
     state = FAILED;
     current_zookeeper->multi(ops);
     state = COMMITTED;
-}
-
-ClusterPtr tryGetReplicatedDatabaseCluster(const String & cluster_name)
-{
-    /// TODO@json.lrj
-    if (const auto * replicated_db = dynamic_cast<const DatabaseReplicated *>(DatabaseCatalog::instance().tryGetDatabase(cluster_name).get()))
-        return replicated_db->tryGetCluster();
-    return {};
 }
 
 }

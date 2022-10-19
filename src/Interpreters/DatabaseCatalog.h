@@ -141,7 +141,8 @@ public:
     static bool isPredefinedDatabase(std::string_view database_name);
 
     static DatabaseCatalog & init(ContextMutablePtr global_context_, const String & catalog_name_ = "");
-    static DatabaseCatalog & instance(const String & catalog_name_ = "");
+    static DatabaseCatalog & instance(const String & catalog_name_);
+    static DatabaseCatalog & defaultInstance() { return instance(""); }
     static void shutdown();
     static Strings getDatabaseCatalogNames();
 

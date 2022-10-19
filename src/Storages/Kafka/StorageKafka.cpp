@@ -8,6 +8,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Interpreters/Cluster.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/evaluateConstantExpression.h>
@@ -204,7 +205,7 @@ StorageKafka::StorageKafka(
     , brokers(getContext()->getMacros()->expand(kafka_settings->kafka_broker_list.value))
     , group(getContext()->getMacros()->expand(kafka_settings->kafka_group_name.value))
     , client_id(
-          kafka_settings->kafka_client_id.value.empty() ? getDefaultClientId(table_id_)
+          kafka_settings->kafka_client_id.value.empty() ? getDefaultClientId(getFQDNOrHostName(), getContext()->getTCPPort(), getContext()->getUserDefinedCatalogName().value_or("default"), table_id_)
                                                         : getContext()->getMacros()->expand(kafka_settings->kafka_client_id.value))
     , format_name(getContext()->getMacros()->expand(kafka_settings->kafka_format.value))
     , row_delimiter(kafka_settings->kafka_row_delimiter.value)
@@ -277,9 +278,10 @@ Names StorageKafka::parseTopics(String topic_list)
     return result;
 }
 
-String StorageKafka::getDefaultClientId(const StorageID & table_id_)
+String StorageKafka::getDefaultClientId(const String & host_fqdn_, UInt64 port_, const String & catalog_name_, const StorageID & table_id_)
 {
-    return fmt::format("{}-{}-{}-{}", VERSION_NAME, getFQDNOrHostName(), table_id_.database_name, table_id_.table_name);
+    auto identifier = Cluster::Address::toString(host_fqdn_, port_, catalog_name_);
+    return fmt::format("{}-{}-{}-{}", VERSION_NAME, identifier, table_id_.database_name, table_id_.table_name);
 }
 
 

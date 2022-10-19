@@ -4,6 +4,7 @@
 #include <optional>
 #include <string>
 #include <Core/Types.h>
+#include <Core/UUID.h>
 
 namespace Poco
 {
@@ -35,8 +36,10 @@ public:
     UserDefinedCatalog(const UserDefinedCatalog &) = delete;
     UserDefinedCatalog & operator=(const UserDefinedCatalog &) = delete;
 
+    String getName() const { return name; }
     String getCatalogPrefixPath() const { return path; }
     String getDefaultDatabase() const { return default_database; }
+    UUID getDefaultDatabaseUUID() const { return default_database_uuid; }
     std::optional<String> getCatalogShard() const { return shard; }
     std::optional<String> getCatalogReplica() const { return replica; }
 
@@ -48,6 +51,7 @@ private:
 
     String path;
     String default_database = "default";
+    UUID default_database_uuid = UUIDHelpers::Nil;
 
     std::optional<String> shard;
     std::optional<String> replica;

@@ -43,6 +43,7 @@ static constexpr UInt64 operator""_GiB(unsigned long long value)
 #define ALIYUN_SETTINGS(M) \
     /** Settings patched by aliyun clickhouse. */ \
     M(Bool, optimize_cross_catalog_query, 0, "Optimize cross catalog query, not using network connections", 0) \
+    M(Bool, assign_table_uuid_for_on_cluster_query, 1, "Atomic generate table UUID during prepare on cluster query. By default, it is enabled, otherwise table UUID will differ in different shards.", 0) \
 
 #define COMMON_SETTINGS(M) \
     M(Dialect, dialect, Dialect::clickhouse, "Which SQL dialect will be used to parse query", 0)\

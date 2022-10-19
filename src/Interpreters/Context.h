@@ -359,7 +359,7 @@ private:
     /// A flag, used to distinguish between user query and internal query to a database engine (MaterializedPostgreSQL).
     bool is_internal_query = false;
 
-    inline static ContextWeakPtr system_catalog_context_instance;
+    inline static ContextWeakMutablePtr system_catalog_context_instance;
     inline static std::map<String, ContextWeakMutablePtr> user_catalog_context_instances;
 
     /// A flag, used to mark if reader needs to apply deleted rows mask.
@@ -465,12 +465,14 @@ public:
     void switchGlobalContextToCatalog(const String & catalog_name);
     void setDefaultCatalog(const String & catalog_name);
     ContextPtr getDefaultCatalogContextInstance() const;
+    String getDefaultCatalogName() const;
     /// Get Catalog prefix path for data, metadata, metadata_dropped, store, shadow, etc.
     /// eg: "shard_4_0/"
     /// Empty for default catalog
     String getCatalogPrefixPath() const;
     String getCatalogPath() const;
     static Strings getAllCatalogPrefixPaths();
+    std::optional<String> getUserDefinedCatalogName() const;
     std::optional<String> getCatalogShard() const;
     std::optional<String> getCatalogReplica() const;
 

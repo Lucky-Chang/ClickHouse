@@ -38,22 +38,23 @@ struct HostID
 {
     String host_name;
     UInt16 port;
+    String catalog = "default";
 
     HostID() = default;
 
     explicit HostID(const Cluster::Address & address)
-        : host_name(address.host_name), port(address.port) {}
+        : host_name(address.host_name), port(address.port), catalog(address.default_catalog) {}
 
-    static HostID fromString(const String & host_port_str);
+    static HostID fromString(const String & host_port_catalog_str);
 
     String toString() const
     {
-        return Cluster::Address::toString(host_name, port);
+        return Cluster::Address::toString(host_name, port, catalog);
     }
 
     String readableString() const
     {
-        return host_name + ":" + DB::toString(port);
+        return host_name + ":" + DB::toString(port) + (catalog == "default" ? "" : "(" + catalog);
     }
 
     bool isLocalAddress(UInt16 clickhouse_port) const;
@@ -238,7 +239,5 @@ public:
 
     ~ZooKeeperMetadataTransaction() { assert(isExecuted() || std::uncaught_exceptions() || ops.empty()); }
 };
-
-ClusterPtr tryGetReplicatedDatabaseCluster(const String & cluster_name);
 
 }

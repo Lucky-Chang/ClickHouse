@@ -24,6 +24,7 @@ public:
         const std::string user;
         const std::string password;
         const std::string quota_key;
+        const std::string catalog;
         const std::string db;
         const std::string table;
         const std::string query;

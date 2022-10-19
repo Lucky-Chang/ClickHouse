@@ -108,7 +108,7 @@ DDLWorker::DDLWorker(
     }
 
     host_fqdn = getFQDNOrHostName();
-    host_fqdn_id = Cluster::Address::toString(host_fqdn, context->getTCPPort());
+    host_fqdn_catalog_id = Cluster::Address::toString(host_fqdn, context->getTCPPort(), context->getUserDefinedCatalogName().value_or("default"));
 }
 
 void DDLWorker::startup()
@@ -187,7 +187,7 @@ DDLTaskPtr DDLWorker::initAndCheckTask(const String & entry_name, String & out_r
         /// We can try to create fail node using FQDN if it equal to host name in cluster config attempt will be successful.
         /// Otherwise, that node will be ignored by DDLQueryStatusSource.
         out_reason = "Incorrect task format";
-        write_error_status(host_fqdn_id, ExecutionStatus::fromCurrentException().serializeText(), out_reason);
+        write_error_status(host_fqdn_catalog_id, ExecutionStatus::fromCurrentException().serializeText(), out_reason);
         return {};
     }
 
@@ -594,9 +594,8 @@ void DDLWorker::processTask(DDLTaskBase & task, const ZooKeeperPtr & zookeeper)
                 if (query_with_table->table)
                 {
                     /// It's not CREATE DATABASE
-                    /// TODO@json.lrj fix this
                     auto table_id = context->tryResolveStorageID(*query_with_table, Context::ResolveOrdinary);
-                    storage = DatabaseCatalog::instance().tryGetTable(table_id, context);
+                    storage = context->getDatabaseCatalog().tryGetTable(table_id, context);
                 }
 
                 task.execute_on_leader = storage && taskShouldBeExecutedOnLeader(task.query, storage) && !task.is_circular_replicated;
@@ -754,8 +753,7 @@ bool DDLWorker::tryExecuteQueryOnLeaderReplica(
 
         // Should return as soon as possible if the table is dropped.
         bool replica_dropped = replicated_storage->is_dropped;
-        /// TODO@json.lrj
-        bool all_replicas_likely_detached = status.active_replicas == 0 && !DatabaseCatalog::instance().isTableExist(replicated_storage->getStorageID(), context);
+        bool all_replicas_likely_detached = status.active_replicas == 0 && !context->getDatabaseCatalog().isTableExist(replicated_storage->getStorageID(), context);
         if (replica_dropped || all_replicas_likely_detached)
         {
             LOG_WARNING(log, ", task {} will not be executed.", task.entry_name);

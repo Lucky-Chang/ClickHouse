@@ -45,11 +45,11 @@ struct BackupSettings
     bool internal = false;
 
     /// Internal, should not be specified by user.
-    /// The current host's ID in the format 'escaped_host_name:port'.
+    /// The current host's ID in the format 'escaped_host_name:port(catalog'.
     String host_id;
 
     /// Internal, should not be specified by user.
-    /// Cluster's hosts' IDs in the format 'escaped_host_name:port' for all shards and replicas in a cluster specified in BACKUP ON CLUSTER.
+    /// Cluster's hosts' IDs in the format 'escaped_host_name:port(catalog' for all shards and replicas in a cluster specified in BACKUP ON CLUSTER.
     std::vector<Strings> cluster_host_ids;
 
     /// Internal, should not be specified by user.

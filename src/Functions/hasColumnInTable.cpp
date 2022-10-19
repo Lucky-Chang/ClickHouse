@@ -134,6 +134,7 @@ ColumnPtr FunctionHasColumnInTable::executeImpl(const ColumnsWithTypeAndName & a
         auto cluster = std::make_shared<Cluster>(
             getContext()->getSettings(),
             host_names,
+            "",
             !user_name.empty() ? user_name : "default",
             password,
             getContext()->getTCPPort(),

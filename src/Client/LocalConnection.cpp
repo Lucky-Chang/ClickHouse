@@ -141,7 +141,7 @@ void LocalConnection::sendQuery(
             {
                 if (!table_id.empty())
                 {
-                    auto storage_ptr = DatabaseCatalog::instance().getTable(table_id, query_context);
+                    auto storage_ptr = DatabaseCatalog::defaultInstance().getTable(table_id, query_context);
                     state->columns_description = storage_ptr->getInMemoryMetadataPtr()->getColumns();
                 }
             }

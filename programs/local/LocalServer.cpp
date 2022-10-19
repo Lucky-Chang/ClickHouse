@@ -122,12 +122,12 @@ void LocalServer::initialize(Poco::Util::Application & self)
 
 static DatabasePtr createMemoryDatabaseIfNotExists(ContextPtr context, const String & database_name)
 {
-    DatabasePtr system_database = DatabaseCatalog::instance().tryGetDatabase(database_name);
+    DatabasePtr system_database = DatabaseCatalog::defaultInstance().tryGetDatabase(database_name);
     if (!system_database)
     {
         /// TODO: add attachTableDelayed into DatabaseMemory to speedup loading
         system_database = std::make_shared<DatabaseMemory>(database_name, context);
-        DatabaseCatalog::instance().attachDatabase(database_name, system_database);
+        DatabaseCatalog::defaultInstance().attachDatabase(database_name, system_database);
     }
     return system_database;
 }
@@ -590,7 +590,7 @@ void LocalServer::processConfig()
     global_context->setDefaultProfiles(config());
 
     /// We load temporary database first, because projections need it.
-    DatabaseCatalog::instance().initializeAndLoadTemporaryDatabase();
+    DatabaseCatalog::defaultInstance().initializeAndLoadTemporaryDatabase();
 
     /** Init dummy default DB
       * NOTE: We force using isolated default database to avoid conflicts with default database from server environment
@@ -598,7 +598,7 @@ void LocalServer::processConfig()
       *  if such tables will not be dropped, clickhouse-server will not be able to load them due to security reasons.
       */
     std::string default_database = config().getString("default_database", "_local");
-    DatabaseCatalog::instance().attachDatabase(default_database, std::make_shared<DatabaseMemory>(default_database, global_context));
+    DatabaseCatalog::defaultInstance().attachDatabase(default_database, std::make_shared<DatabaseMemory>(default_database, global_context));
     global_context->setCurrentDatabase(default_database);
     applyCmdOptions(global_context);
 
@@ -627,7 +627,7 @@ void LocalServer::processConfig()
         if (!config().has("only-system-tables"))
         {
             loadMetadata(global_context);
-            DatabaseCatalog::instance().loadDatabases();
+            DatabaseCatalog::defaultInstance().loadDatabases();
         }
 
         LOG_DEBUG(log, "Loaded metadata.");

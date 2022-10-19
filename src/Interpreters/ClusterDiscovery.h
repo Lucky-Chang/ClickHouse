@@ -19,7 +19,7 @@ namespace DB
  * Discover cluster nodes.
  *
  * Each node adds ephemernal node into specified path in zookeeper (each cluster have own path).
- * Also node subscribed for updates for these paths, and at each child node chanhe cluster updated.
+ * Also node subscribed for updates for these paths, and at each child node change cluster updated.
  * When node goes down ephemernal node are destroyed, cluster configuration is updated on other node and gone node is removed from cluster.
  */
 class ClusterDiscovery
@@ -41,7 +41,7 @@ private:
         /// versioning for format of data stored in zk
         static constexpr size_t data_ver = 1;
 
-        /// host:port
+        /// host:port(catalog
         String address;
         /// is secure tcp port user
         bool secure = false;
@@ -59,7 +59,7 @@ private:
         String serialize() const;
     };
 
-    // node uuid -> address ("host:port")
+    // node uuid -> address ("host:port(catalog")
     using NodesInfo = std::unordered_map<String, NodeInfo>;
 
     struct ClusterInfo
@@ -78,12 +78,13 @@ private:
         explicit ClusterInfo(const String & name_,
                              const String & zk_root_,
                              UInt16 port,
+                             String catalog,
                              bool secure,
                              size_t shard_id,
                              bool observer_mode)
             : name(name_)
             , zk_root(zk_root_)
-            , current_node(getFQDNOrHostName() + ":" + toString(port), secure, shard_id)
+            , current_node(getFQDNOrHostName() + ":" + toString(port) + (catalog.empty() ? "" : ("(" + catalog)), secure, shard_id)
             , current_node_is_observer(observer_mode)
         {
         }

@@ -3,6 +3,8 @@
 #include <Common/Exception.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/quoteString.h>
+#include <IO/ReadBufferFromString.h>
+#include <IO/ReadHelpers.h>
 
 
 namespace DB
@@ -36,6 +38,11 @@ UserDefinedCatalog::UserDefinedCatalog(
                     "DatabaseCatalog path can contain only alphanumeric and '_' : " + backQuote(path),
                     ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
         }
+        else if (startsWith(catalog_key, "default_database_uuid"))
+        {
+            ReadBufferFromOwnString uuid_reader {config.getString(config_prefix + "." + catalog_key)};
+            readUUIDText(default_database_uuid, uuid_reader);
+        }
         else if (startsWith(catalog_key, "default_database"))
             default_database = config.getString(config_prefix + "." + catalog_key);
         else if (startsWith(catalog_key, "shard"))
@@ -64,6 +71,8 @@ UserDefinedCatalogs::UserDefinedCatalogs(
 
     for (const auto & user_catalog_name : user_catalog_names)
     {
+        if (user_catalog_name == "default")
+            throw Exception("Can't define `default` catalog, it is system preserved", ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
         if (!std::all_of(user_catalog_name.begin(), user_catalog_name.end(), isWordCharASCII))
             throw Exception(
                 "DatabaseCatalog name can contain only alphanumeric and '_' : " + backQuote(user_catalog_name),

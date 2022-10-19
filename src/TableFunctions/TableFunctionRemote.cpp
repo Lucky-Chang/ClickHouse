@@ -229,7 +229,7 @@ void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, ContextPtr
             for (const auto & host_with_qualifier : hosts)
             {
                 std::string host;
-                size_t colon = host_with_qualifier.find('/');
+                size_t colon = host_with_qualifier.find('(');
                 if (colon != String::npos)
                     host = host_with_qualifier.substr(0, colon);
                 else
@@ -246,9 +246,12 @@ void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, ContextPtr
 
         bool treat_local_as_remote = false;
         bool treat_local_port_as_remote = context->getApplicationType() == Context::ApplicationType::LOCAL;
+        /// For backward-compatibility: remote function may connect opensource server.
+        /// Here must set `default_catalog` to empty string
         cluster = std::make_shared<Cluster>(
             context->getSettingsRef(),
             names,
+            "",
             configuration.username,
             configuration.password,
             (secure ? (maybe_secure_port ? *maybe_secure_port : DBMS_DEFAULT_SECURE_PORT) : context->getTCPPort()),

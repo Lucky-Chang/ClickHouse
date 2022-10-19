@@ -21,6 +21,7 @@
 #include <Core/BackgroundSchedulePool.h>
 #include <Formats/FormatFactory.h>
 #include <Databases/IDatabase.h>
+#include <Databases/DatabaseReplicated.h>
 #include <Storages/IStorage.h>
 #include <Storages/MarkCache.h>
 #include <Storages/MergeTree/MergeList.h>
@@ -243,7 +244,7 @@ struct ContextSharedPart : boost::noncopyable
     mutable ThrottlerPtr remote_write_throttler;            /// A server-wide throttler for remote IO writes
 
     MultiVersion<Macros> macros;                            /// Substitutions extracted from config.
-    std::unique_ptr<DDLWorker> ddl_worker;                  /// Process ddl commands from zk.
+    std::map<String, std::unique_ptr<DDLWorker>> ddl_workers;   /// Process ddl commands from zk.
     /// Rules for selecting the compression settings, depending on the size of the part.
     mutable std::unique_ptr<CompressionCodecSelector> compression_codec_selector;
     /// Storage disk chooser for MergeTree engines
@@ -457,7 +458,7 @@ struct ContextSharedPart : boost::noncopyable
         std::unique_ptr<BackgroundSchedulePool> delete_schedule_pool;
         std::unique_ptr<BackgroundSchedulePool> delete_distributed_schedule_pool;
         std::unique_ptr<BackgroundSchedulePool> delete_message_broker_schedule_pool;
-        std::unique_ptr<DDLWorker> delete_ddl_worker;
+        std::map<String, std::unique_ptr<DDLWorker>> delete_ddl_workers;
         std::unique_ptr<AccessControl> delete_access_control;
 
         {
@@ -495,7 +496,7 @@ struct ContextSharedPart : boost::noncopyable
             delete_schedule_pool = std::move(schedule_pool);
             delete_distributed_schedule_pool = std::move(distributed_schedule_pool);
             delete_message_broker_schedule_pool = std::move(message_broker_schedule_pool);
-            delete_ddl_worker = std::move(ddl_worker);
+            delete_ddl_workers = std::move(ddl_workers);
             delete_access_control = std::move(access_control);
 
             /// Stop trace collector if any
@@ -518,7 +519,7 @@ struct ContextSharedPart : boost::noncopyable
         delete_embedded_dictionaries.reset();
         delete_external_dictionaries_loader.reset();
         delete_external_user_defined_executable_functions_loader.reset();
-        delete_ddl_worker.reset();
+        delete_ddl_workers.clear();
         delete_buffer_flush_schedule_pool.reset();
         delete_schedule_pool.reset();
         delete_distributed_schedule_pool.reset();
@@ -843,13 +844,20 @@ void Context::switchGlobalContextToCatalog(const String & catalog_name)
 {
     if (isGlobalContext())
         throw Exception("Can't set catalog in global context", ErrorCodes::LOGICAL_ERROR);
-    if (catalog_name == getGlobalContext()->user_defined_catalog.value_or(""))
+    if (catalog_name == getGlobalContext()->user_defined_catalog.value_or("default"))
         return;
     auto lock = getLock();
+    if (catalog_name == "default")
+    {
+        global_context = system_catalog_context_instance.lock();
+        user_defined_catalog = std::nullopt;
+        return;
+    }
     auto iter = user_catalog_context_instances.find(catalog_name);
     if (iter == user_catalog_context_instances.end())
         throw Exception("Requested catalog '" + catalog_name + "' not found", ErrorCodes::BAD_GET);
     global_context = iter->second;
+    user_defined_catalog = catalog_name;
 }
 
 void Context::setDefaultCatalog(const String & catalog_name)
@@ -861,12 +869,18 @@ void Context::setDefaultCatalog(const String & catalog_name)
 ContextPtr Context::getDefaultCatalogContextInstance() const
 {
     auto lock = getLock();
-    if (shared->default_catalog.empty())
+    if (shared->default_catalog == "default")
         return system_catalog_context_instance.lock();
     auto iter = user_catalog_context_instances.find(shared->default_catalog);
     if (iter == user_catalog_context_instances.end())
         throw Exception("Default catalog '" + shared->default_catalog + "' not found", ErrorCodes::BAD_GET);
     return iter->second.lock();
+}
+
+String Context::getDefaultCatalogName() const
+{
+    auto lock = getLock();
+    return shared->default_catalog;
 }
 
 String Context::getCatalogPrefixPath() const
@@ -899,6 +913,14 @@ Strings Context::getAllCatalogPrefixPaths()
         prefix_paths.push_back(catalog->getCatalogPrefixPath());
     }
     return prefix_paths;
+}
+
+std::optional<String> Context::getUserDefinedCatalogName() const
+{
+    auto lock = getLock();
+    if (user_defined_catalog)
+        return getUserDefinedCatalog(*user_defined_catalog)->getName();
+    return {};
 }
 
 std::optional<String> Context::getCatalogShard() const
@@ -1648,7 +1670,7 @@ ExternalDictionariesLoader & Context::getExternalDictionariesLoaderUnlocked()
 {
     if (!shared->external_dictionaries_loader)
         shared->external_dictionaries_loader =
-            std::make_unique<ExternalDictionariesLoader>(getGlobalContext());
+            std::make_unique<ExternalDictionariesLoader>(getSystemCatalogContextInstance());
     return *shared->external_dictionaries_loader;
 }
 
@@ -1667,7 +1689,7 @@ ExternalUserDefinedExecutableFunctionsLoader & Context::getExternalUserDefinedEx
 {
     if (!shared->external_user_defined_executable_functions_loader)
         shared->external_user_defined_executable_functions_loader =
-            std::make_unique<ExternalUserDefinedExecutableFunctionsLoader>(getGlobalContext());
+            std::make_unique<ExternalUserDefinedExecutableFunctionsLoader>(getSystemCatalogContextInstance());
     return *shared->external_user_defined_executable_functions_loader;
 }
 
@@ -1681,7 +1703,7 @@ EmbeddedDictionaries & Context::getEmbeddedDictionariesImpl(const bool throw_on_
 
         shared->embedded_dictionaries = std::make_unique<EmbeddedDictionaries>(
             std::move(geo_dictionaries_loader),
-            getGlobalContext(),
+            getSystemCatalogContextInstance(),
             throw_on_error);
     }
 
@@ -2115,16 +2137,18 @@ bool Context::hasDistributedDDL() const
 void Context::setDDLWorker(std::unique_ptr<DDLWorker> ddl_worker)
 {
     auto lock = getLock();
-    if (shared->ddl_worker)
+    auto catalog_name = user_defined_catalog.value_or("default");
+    if (shared->ddl_workers.contains(catalog_name))
         throw Exception("DDL background thread has already been initialized", ErrorCodes::LOGICAL_ERROR);
     ddl_worker->startup();
-    shared->ddl_worker = std::move(ddl_worker);
+    shared->ddl_workers[catalog_name] = std::move(ddl_worker);
 }
 
 DDLWorker & Context::getDDLWorker() const
 {
     auto lock = getLock();
-    if (!shared->ddl_worker)
+    auto catalog_name = user_defined_catalog.value_or("default");
+    if (!shared->ddl_workers.contains(catalog_name))
     {
         if (!hasZooKeeper())
             throw Exception("There is no Zookeeper configuration in server config", ErrorCodes::NO_ELEMENTS_IN_CONFIG);
@@ -2134,7 +2158,7 @@ DDLWorker & Context::getDDLWorker() const
 
         throw Exception("DDL background thread is not initialized", ErrorCodes::NO_ELEMENTS_IN_CONFIG);
     }
-    return *shared->ddl_worker;
+    return *shared->ddl_workers[catalog_name];
 }
 
 zkutil::ZooKeeperPtr Context::getZooKeeper() const
@@ -2501,7 +2525,10 @@ std::shared_ptr<Cluster> Context::tryGetCluster(const std::string & cluster_name
     if (res)
         return res;
     if (!cluster_name.empty())
-        res = tryGetReplicatedDatabaseCluster(cluster_name);
+    {
+        if (const auto * replicated_db = dynamic_cast<const DatabaseReplicated *>(getDatabaseCatalog().tryGetDatabase(cluster_name).get()))
+           return replicated_db->tryGetCluster();
+    }
     return res;
 }
 
@@ -2559,7 +2586,7 @@ void Context::setClustersConfig(const ConfigurationPtr & config, bool enable_dis
     std::lock_guard lock(shared->clusters_mutex);
     if (ConfigHelper::getBool(*config, "allow_experimental_cluster_discovery") && enable_discovery && !shared->cluster_discovery)
     {
-        shared->cluster_discovery = std::make_unique<ClusterDiscovery>(*config, getGlobalContext());
+        shared->cluster_discovery = std::make_unique<ClusterDiscovery>(*config, getSystemCatalogContextInstance());
     }
 
     /// Do not update clusters if this part of config wasn't changed.
@@ -2590,7 +2617,7 @@ void Context::setCluster(const String & cluster_name, const std::shared_ptr<Clus
 void Context::initializeSystemLogs()
 {
     auto lock = getLock();
-    shared->system_logs = std::make_unique<SystemLogs>(getGlobalContext(), getConfigRef());
+    shared->system_logs = std::make_unique<SystemLogs>(getSystemCatalogContextInstance(), getConfigRef());
 }
 
 void Context::initializeTraceCollector()
@@ -3145,6 +3172,7 @@ const IHostContextPtr & Context::getHostContext() const
 
 std::shared_ptr<ActionLocksManager> Context::getActionLocksManager() const
 {
+    /// TODO@json.lrj check correct
     auto lock = getLock();
 
     if (!shared->action_locks_manager)

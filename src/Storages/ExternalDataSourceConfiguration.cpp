@@ -86,6 +86,7 @@ void ExternalDataSourceConfiguration::set(const ExternalDataSourceConfiguration 
     username = conf.username;
     password = conf.password;
     quota_key = conf.quota_key;
+    catalog = conf.catalog;
     database = conf.database;
     table = conf.table;
     schema = conf.schema;
@@ -242,6 +243,7 @@ std::optional<ExternalDataSourceInfo> getExternalDataSourceConfiguration(
         configuration.username = dict_config.getString(dict_config_prefix + ".user", config.getString(collection_prefix + ".user", ""));
         configuration.password = dict_config.getString(dict_config_prefix + ".password", config.getString(collection_prefix + ".password", ""));
         configuration.quota_key = dict_config.getString(dict_config_prefix + ".quota_key", config.getString(collection_prefix + ".quota_key", ""));
+        configuration.catalog = dict_config.getString(dict_config_prefix + ".catalog", config.getString(collection_prefix + ".catalog", ""));
         configuration.database = dict_config.getString(dict_config_prefix + ".db", config.getString(dict_config_prefix + ".database",
             config.getString(collection_prefix + ".db", config.getString(collection_prefix + ".database", ""))));
         configuration.table = dict_config.getString(dict_config_prefix + ".table", config.getString(collection_prefix + ".table", ""));

@@ -175,7 +175,7 @@ std::shared_ptr<TSystemLog> createSystemLog(
 /// That way it can be used to compare with the SystemLog::getCreateTableQuery()
 ASTPtr getCreateTableQueryClean(const StorageID & table_id, ContextPtr context)
 {
-    DatabasePtr database = DatabaseCatalog::instance().getDatabase(table_id.database_name);
+    DatabasePtr database = DatabaseCatalog::defaultInstance().getDatabase(table_id.database_name);
     ASTPtr old_ast = database->getCreateTableQuery(table_id.table_name, context);
     auto & old_create_query_ast = old_ast->as<ASTCreateQuery &>();
     /// Reset UUID
@@ -303,7 +303,7 @@ void SystemLog<LogElement>::shutdown()
 {
     stopFlushThread();
 
-    auto table = DatabaseCatalog::instance().tryGetTable(table_id, getContext());
+    auto table = DatabaseCatalog::defaultInstance().tryGetTable(table_id, getContext());
     if (table)
         table->flushAndShutdown();
 }
@@ -442,7 +442,7 @@ void SystemLog<LogElement>::prepareTable()
 {
     String description = table_id.getNameForLogs();
 
-    auto table = DatabaseCatalog::instance().tryGetTable(table_id, getContext());
+    auto table = DatabaseCatalog::defaultInstance().tryGetTable(table_id, getContext());
     if (table)
     {
         if (old_create_query.empty())
@@ -456,7 +456,7 @@ void SystemLog<LogElement>::prepareTable()
         {
             /// Rename the existing table.
             int suffix = 0;
-            while (DatabaseCatalog::instance().isTableExist(
+            while (DatabaseCatalog::defaultInstance().isTableExist(
                 {table_id.database_name, table_id.table_name + "_" + toString(suffix)}, getContext()))
                 ++suffix;
 
@@ -508,7 +508,7 @@ void SystemLog<LogElement>::prepareTable()
         interpreter.setInternal(true);
         interpreter.execute();
 
-        table = DatabaseCatalog::instance().getTable(table_id, getContext());
+        table = DatabaseCatalog::defaultInstance().getTable(table_id, getContext());
 
         old_create_query.clear();
     }

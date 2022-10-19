@@ -7,6 +7,7 @@
 #include <Common/Config/AbstractConfigurationComparison.h>
 #include <Common/Config/ConfigHelper.h>
 #include <Core/Settings.h>
+#include <Interpreters/Context.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 #include <Poco/Util/AbstractConfiguration.h>
@@ -49,7 +50,8 @@ inline bool isLocalImpl(const Cluster::Address & address, const Poco::Net::Socke
     /// Also, replica is considered non-local, if it has default database set
     ///  (only reason is to avoid query rewrite).
 
-    return address.default_catalog.empty() && address.default_database.empty() && isLocalAddress(resolved_address, clickhouse_port);
+    auto local_catalog = Context::getSystemCatalogContextInstance()->getDefaultCatalogName();
+    return address.default_database.empty() && isLocalAddress(resolved_address, clickhouse_port) && address.default_catalog == local_catalog;
 }
 
 void concatInsertPath(std::string & insert_path, const std::string & dir_name)
@@ -105,7 +107,7 @@ Cluster::Address::Address(
 
     user = config.getString(config_prefix + ".user", "default");
     password = config.getString(config_prefix + ".password", "");
-    default_catalog = config.getString(config_prefix + ".default_catalog", "");
+    default_catalog = config.getString(config_prefix + ".default_catalog", "default");
     default_database = config.getString(config_prefix + ".default_database", "");
     secure = ConfigHelper::getBool(config, config_prefix + ".secure", false, /* empty_as */true) ? Protocol::Secure::Enable : Protocol::Secure::Disable;
     priority = config.getInt(config_prefix + ".priority", 1);
@@ -177,12 +179,14 @@ Cluster::Address::Address(
 
 String Cluster::Address::toString() const
 {
-    return toString(host_name, port);
+    return toString(host_name, port, default_catalog);
 }
 
-String Cluster::Address::toString(const String & host_name, UInt16 port)
+String Cluster::Address::toString(const String & host_name, UInt16 port, const String & default_catalog)
 {
-    return escapeForFileName(host_name) + ':' + DB::toString(port);
+    /// For backward-compatibility, ignore catalog field for `default`.
+    /// Server `default_catalog` only works for clickhouse-client, not for internal connections.
+    return escapeForFileName(host_name) + ':' + DB::toString(port) + (default_catalog == "default" ? "" : "(" + default_catalog);
 }
 
 String Cluster::Address::readableString() const
@@ -196,16 +200,22 @@ String Cluster::Address::readableString() const
         res += host_name;
 
     res += ':' + DB::toString(port);
+    if (default_catalog != "default")
+        res += '(' + default_catalog;
     return res;
 }
 
-std::pair<String, UInt16> Cluster::Address::fromString(const String & host_port_string)
+std::tuple<String, UInt16, String> Cluster::Address::fromString(const String & host_port_catalog_string)
 {
+    auto catalog_pos = host_port_catalog_string.find_last_of('(');
+    auto host_port_string = host_port_catalog_string.substr(0, catalog_pos);
+    auto default_catalog = (catalog_pos == std::string::npos) ? "default" : host_port_catalog_string.substr(catalog_pos + 1);
+
     auto pos = host_port_string.find_last_of(':');
     if (pos == std::string::npos)
         throw Exception("Incorrect <host>:<port> format " + host_port_string, ErrorCodes::SYNTAX_ERROR);
 
-    return {unescapeForFileName(host_port_string.substr(0, pos)), parse<UInt16>(host_port_string.substr(pos + 1))};
+    return {unescapeForFileName(host_port_string.substr(0, pos)), parse<UInt16>(host_port_string.substr(pos + 1)), default_catalog};
 }
 
 
@@ -225,7 +235,7 @@ String Cluster::Address::toFullString(bool use_compact_format) const
             escapeForFileName(user)
             + (password.empty() ? "" : (':' + escapeForFileName(password))) + '@'
             + escapeForFileName(host_name) + ':' + std::to_string(port)
-            + (default_catalog.empty() ? "" : ('(' + escapeForFileName(default_catalog)))
+            + (default_catalog == "default" ? "" : ('(' + escapeForFileName(default_catalog)))
             + (default_database.empty() ? "" : ('#' + escapeForFileName(default_database)))
             + ((secure == Protocol::Secure::Enable) ? "+secure" : "");
     }
@@ -266,7 +276,7 @@ Cluster::Address Cluster::Address::fromFullString(const String & full_string)
 
         const char * colon = strchr(full_string.data(), ':');
         if (!user_pw_end || !colon)
-            throw Exception("Incorrect user[:password]@host:port#default_database format " + full_string, ErrorCodes::SYNTAX_ERROR);
+            throw Exception("Incorrect user[:password]@host:port(default_catalog#default_database format " + full_string, ErrorCodes::SYNTAX_ERROR);
 
         const bool has_pw = colon < user_pw_end;
         const char * host_end = has_pw ? strchr(user_pw_end + 1, ':') : colon;
@@ -284,7 +294,7 @@ Cluster::Address Cluster::Address::fromFullString(const String & full_string)
         address.host_name = unescapeForFileName(std::string(user_pw_end + 1, host_end));
         address.user = unescapeForFileName(std::string(address_begin, has_pw ? colon : user_pw_end));
         address.password = has_pw ? unescapeForFileName(std::string(colon + 1, user_pw_end)) : std::string();
-        address.default_catalog = has_catalog ? unescapeForFileName(std::string(has_catalog + 1, catalog_end)) : std::string();
+        address.default_catalog = has_catalog ? unescapeForFileName(std::string(has_catalog + 1, catalog_end)) : "default";
         address.default_database = has_db ? unescapeForFileName(std::string(has_db + 1, address_end)) : std::string();
         // address.priority ignored
         return address;
@@ -550,6 +560,7 @@ Cluster::Cluster(const Poco::Util::AbstractConfiguration & config,
 Cluster::Cluster(
     const Settings & settings,
     const std::vector<std::vector<String>> & names,
+    const String & default_catalog,
     const String & username,
     const String & password,
     UInt16 clickhouse_port,
@@ -569,11 +580,11 @@ Cluster::Cluster(
         Addresses current;
         for (const auto & replica : shard)
         {
-            size_t colon = replica.find_last_of('/');
+            size_t colon = replica.rfind('(');
             bool has_default_catalog = (colon != String::npos);
             current.emplace_back(
                 has_default_catalog ? replica.substr(0, colon) : replica,
-                has_default_catalog ? replica.substr(colon + 1) : "",
+                has_default_catalog ? replica.substr(colon + 1) : default_catalog,
                 username,
                 password,
                 clickhouse_port,

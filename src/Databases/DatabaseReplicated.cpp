@@ -63,7 +63,7 @@ zkutil::ZooKeeperPtr DatabaseReplicated::getZooKeeper() const
 
 static inline String getHostID(ContextPtr global_context, const UUID & db_uuid)
 {
-    return Cluster::Address::toString(getFQDNOrHostName(), global_context->getTCPPort()) + ':' + toString(db_uuid);
+    return Cluster::Address::toString(getFQDNOrHostName(), global_context->getTCPPort(), global_context->getUserDefinedCatalogName().value_or("default")) + ':' + toString(db_uuid);
 }
 
 static inline UInt64 getMetadataHash(const String & table_name, const String & metadata)
@@ -235,6 +235,7 @@ ClusterPtr DatabaseReplicated::getClusterImpl() const
     return std::make_shared<Cluster>(
         getContext()->getSettingsRef(),
         shards,
+        "default",
         cluster_auth_info.cluster_username,
         cluster_auth_info.cluster_password,
         default_port,

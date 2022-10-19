@@ -52,6 +52,7 @@ NamesAndTypesList StorageSystemDDLWorkerQueue::getNamesAndTypes()
         {"entry_version",       std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>())},
         {"initiator_host",      std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())},
         {"initiator_port",      std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt16>())},
+        {"initiator_catalog",   std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())},
         {"cluster",             std::make_shared<DataTypeString>()},
         {"query",               std::make_shared<DataTypeString>()},
         {"settings",            std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>())},
@@ -59,6 +60,7 @@ NamesAndTypesList StorageSystemDDLWorkerQueue::getNamesAndTypes()
 
         {"host",                std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())},
         {"port",                std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt16>())},
+        {"catalog",             std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())},
         {"status",              std::make_shared<DataTypeNullable>(std::make_shared<DataTypeEnum8>(getStatusEnumsAndValues()))},
         {"exception_code",      std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt16>())},
         {"exception_text",      std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())},
@@ -100,6 +102,8 @@ static void fillCommonColumns(MutableColumns & res_columns, size_t & col, const 
         res_columns[col++]->insert(Field{});
         /// initiator_port
         res_columns[col++]->insert(Field{});
+        /// initiator_catalog
+        res_columns[col++]->insert(Field{});
     }
     else
     {
@@ -108,6 +112,8 @@ static void fillCommonColumns(MutableColumns & res_columns, size_t & col, const 
         res_columns[col++]->insert(initiator.host_name);
         /// initiator_port
         res_columns[col++]->insert(initiator.port);
+        /// initiator_catalog
+        res_columns[col++]->insert(initiator.catalog);
     }
 
     /// cluster
@@ -159,6 +165,9 @@ static void fillHostnameColumns(MutableColumns & res_columns, size_t & col, cons
 
     /// port
     res_columns[col++]->insert(host_id.port);
+
+    /// catalog
+    res_columns[col++]->insert(host_id.catalog);
 }
 
 static void fillStatusColumnsWithNulls(MutableColumns & res_columns, size_t & col, Status status)
@@ -345,6 +354,8 @@ void StorageSystemDDLWorkerQueue::fillData(MutableColumns & res_columns, Context
             /// host
             res_columns[col++]->insert(Field{});
             /// port
+            res_columns[col++]->insert(Field{});
+            /// catalog
             res_columns[col++]->insert(Field{});
             fillStatusColumnsWithNulls(res_columns, col, Status::UNKNOWN);
         }

@@ -51,6 +51,7 @@ public:
     Cluster(
         const Settings & settings,
         const std::vector<std::vector<String>> & names,
+        const String & default_catalog,
         const String & username,
         const String & password,
         UInt16 clickhouse_port,
@@ -102,7 +103,7 @@ public:
         UInt32 shard_index{}; /// shard serial number in configuration file, starting from 1.
         UInt32 replica_index{}; /// replica serial number in this shard, starting from 1; zero means no replicas.
 
-        String default_catalog;
+        String default_catalog = "default";
         /// This database is selected when no database is specified for Distributed table
         String default_database;
         /// The locality is determined at the initialization, and is not changed even if DNS is changed
@@ -138,15 +139,15 @@ public:
             String cluster_name = "",
             String cluster_secret_ = "");
 
-        /// Returns 'escaped_host_name:port'
+        /// Returns 'escaped_host_name:port(catalog'
         String toString() const;
 
-        /// Returns 'host_name:port'
+        /// Returns 'host_name:port(catalog'
         String readableString() const;
 
-        static String toString(const String & host_name, UInt16 port);
+        static String toString(const String & host_name, UInt16 port, const String & default_catalog);
 
-        static std::pair<String, UInt16> fromString(const String & host_port_string);
+        static std::tuple<String, UInt16, String> fromString(const String & host_port_catalog_string);
 
         /// Returns escaped shard{shard_index}_replica{replica_index} or escaped
         /// user:password@resolved_host_address:resolved_host_port#default_database

@@ -29,7 +29,7 @@ namespace ErrorCodes
 }
 
 static const std::unordered_set<std::string_view> dictionary_allowed_keys = {
-    "host", "port", "user", "password", "quota_key", "db", "database", "table",
+    "host", "port", "user", "password", "quota_key", "catalog", "db", "database", "table",
     "update_field", "update_lag", "invalidate_query", "query", "where", "name", "secure"};
 
 namespace
@@ -51,7 +51,7 @@ namespace
             MAX_CONNECTIONS,
             configuration.host,
             configuration.port,
-            "",
+            configuration.catalog,
             configuration.db,
             configuration.user,
             configuration.password,
@@ -240,6 +240,7 @@ void registerDictionarySourceClickHouse(DictionarySourceFactory & factory)
         std::string user = config.getString(settings_config_prefix + ".user", "default");
         std::string password =  config.getString(settings_config_prefix + ".password", "");
         std::string quota_key =  config.getString(settings_config_prefix + ".quota_key", "");
+        std::string catalog = config.getString(settings_config_prefix + ".catalog", "");
         std::string db = config.getString(settings_config_prefix + ".db", default_database);
         std::string table = config.getString(settings_config_prefix + ".table", "");
         UInt16 port = static_cast<UInt16>(config.getUInt(settings_config_prefix + ".port", default_port));
@@ -256,6 +257,7 @@ void registerDictionarySourceClickHouse(DictionarySourceFactory & factory)
             user = configuration.username;
             password = configuration.password;
             quota_key = configuration.quota_key;
+            catalog = configuration.catalog;
             db = configuration.database;
             table = configuration.table;
             port = configuration.port;
@@ -266,6 +268,7 @@ void registerDictionarySourceClickHouse(DictionarySourceFactory & factory)
             .user = user,
             .password = password,
             .quota_key = quota_key,
+            .catalog = catalog,
             .db = db,
             .table = table,
             .query = config.getString(settings_config_prefix + ".query", ""),
@@ -274,7 +277,7 @@ void registerDictionarySourceClickHouse(DictionarySourceFactory & factory)
             .update_field = config.getString(settings_config_prefix + ".update_field", ""),
             .update_lag = config.getUInt64(settings_config_prefix + ".update_lag", 1),
             .port = port,
-            .is_local = isLocalAddress({host, port}, default_port),
+            .is_local = catalog.empty() && isLocalAddress({host, port}, default_port),
             .secure = config.getBool(settings_config_prefix + ".secure", false)};
 
 

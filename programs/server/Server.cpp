@@ -1149,6 +1149,10 @@ int Server::main(const std::vector<std::string> & /*args*/)
             auto * global_overcommit_tracker = global_context->getGlobalOvercommitTracker();
             total_memory_tracker.setOvercommitTracker(global_overcommit_tracker);
 
+            /// TODO@json.lrj may reload default catalog here, but Cluster address `is_local` is constant initialized.
+            if (initial_loading)
+                global_context->setDefaultCatalog(config->getString("default_catalog", "default"));
+
             // FIXME logging-related things need synchronization -- see the 'Logger * log' saved
             // in a lot of places. For now, disable updating log configuration without server restart.
             //setTextLog(global_context->getTextLog());
@@ -1251,7 +1255,6 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
             if (!initial_loading)
             {
-                global_context->setDefaultCatalog(config->getString("default_catalog", ""));
                 /// We do not load ZooKeeper configuration on the first config loading
                 /// because TestKeeper server is not started yet.
                 if (config->has("zookeeper"))
@@ -1527,7 +1530,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
         /** Explicitly destroy Context. It is more convenient than in destructor of Server, because logger is still available.
           * At this moment, no one could own shared part of Context.
           */
-        catalog_contexts.clear();
+        user_catalog_contexts.clear();
         global_context.reset();
         shared_context.reset();
         LOG_DEBUG(log, "Destroyed global context.");
@@ -1614,6 +1617,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
             auto user_defined_catalog = user_defined_catalogs->getUserDefinedCatalog(user_catalog_name);
             auto catalog_path = path / user_defined_catalog->getCatalogPrefixPath();
             auto catalog_default_database = user_defined_catalog->getDefaultDatabase();
+            auto catalog_default_database_uuid = user_defined_catalog->getDefaultDatabaseUUID();
 
             LOG_INFO(log, "Loading metadata from {}", catalog_path.c_str());
             fs::create_directories(catalog_path / "data/");
@@ -1623,7 +1627,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
             auto catalog_context = Context::createCopy(global_context);
             catalog_context->makeUserCatalogContext(user_catalog_name);
             catalog_context->setCurrentDatabaseNameInUserCatalogContext(catalog_default_database);
-            catalog_contexts.emplace(user_catalog_name, catalog_context);
+            user_catalog_contexts.emplace(user_catalog_name, catalog_context);
 
             try
             {
@@ -1637,7 +1641,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 attachInformationSchema(catalog_context, *database_catalog.getDatabase(DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE));
                 database_catalog.loadMarkedAsDroppedTables();
 
-                loadMetadata(catalog_context, catalog_default_database);
+                loadMetadata(catalog_context, catalog_default_database, catalog_default_database_uuid);
                 database_catalog.loadDatabases();
                 database_catalog.assertDatabaseExists(catalog_default_database);
             }
@@ -1649,7 +1653,6 @@ int Server::main(const std::vector<std::string> & /*args*/)
         }
     }
     LOG_DEBUG(log, "Loaded metadata.");
-    global_context->setDefaultCatalog(config().getString("default_catalog", ""));
 
     /// Init trace collector only after trace_log system table was created
     /// Disable it if we collect test coverage information, because it will work extremely slow.
@@ -1809,6 +1812,10 @@ int Server::main(const std::vector<std::string> & /*args*/)
             int pool_size = config().getInt("distributed_ddl.pool_size", 1);
             if (pool_size < 1)
                 throw Exception("distributed_ddl.pool_size should be greater then 0", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+            for (auto && [catalog_name, catalog_context] : user_catalog_contexts)
+                catalog_context->setDDLWorker(std::make_unique<DDLWorker>(pool_size, ddl_zookeeper_path, catalog_context, &config(),
+                                                                     "distributed_ddl", "DDLWorker(" + catalog_name + ")",
+                                                                     &CurrentMetrics::MaxDDLEntryID, &CurrentMetrics::MaxPushedDDLEntryID));
             global_context->setDDLWorker(std::make_unique<DDLWorker>(pool_size, ddl_zookeeper_path, global_context, &config(),
                                                                      "distributed_ddl", "DDLWorker",
                                                                      &CurrentMetrics::MaxDDLEntryID, &CurrentMetrics::MaxPushedDDLEntryID));

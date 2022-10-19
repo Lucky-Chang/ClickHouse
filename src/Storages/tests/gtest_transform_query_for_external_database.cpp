@@ -93,7 +93,7 @@ private:
                 std::make_shared<StorageMemory>(
                     StorageID(db_name, table_name), ColumnsDescription{getColumns()}, ConstraintsDescription{}, String{}));
         }
-        DatabaseCatalog::instance().attachDatabase(database->getDatabaseName(), database);
+        DatabaseCatalog::defaultInstance().attachDatabase(database->getDatabaseName(), database);
         context->setCurrentDatabase("test");
     }
 };

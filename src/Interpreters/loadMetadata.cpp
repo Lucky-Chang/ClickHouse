@@ -16,11 +16,14 @@
 
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
+#include <fmt/core.h>
 #include <Common/escapeForFileName.h>
 
 #include <Common/typeid_cast.h>
 #include <filesystem>
 #include <Common/logger_useful.h>
+#include <Core/UUID.h>
 
 namespace fs = std::filesystem;
 
@@ -117,7 +120,31 @@ static void checkUnsupportedVersion(ContextMutablePtr context, const String & da
                                                      "If so, you should upgrade through intermediate version.", database_name);
 }
 
-void loadMetadata(ContextMutablePtr context, const String & default_database_name)
+static void loadDefaultDatabaseImpl(ContextMutablePtr context, const String & default_database_name, UUID default_database_uuid, bool force_restore_data)
+{
+    String path = context->getCatalogPath() + "metadata/" + default_database_name;
+    String metadata_file = path + ".sql";
+    if (fs::exists(fs::path(metadata_file)))
+    {
+        loadDatabase(context, default_database_name, path, force_restore_data);
+    }
+    else
+    {
+        checkUnsupportedVersion(context, default_database_name);
+        /// Initialize default database manually
+        String database_create_query = "CREATE DATABASE ";
+        database_create_query += default_database_name;
+        if (default_database_uuid != UUIDHelpers::Nil)
+        {
+            WriteBufferFromOwnString uuid_str;
+            writeUUIDText(default_database_uuid, uuid_str);
+            database_create_query += fmt::format(" UUID '{}'", uuid_str.str());
+        }
+        executeCreateQuery(database_create_query, context, default_database_name, "<no file>", true, force_restore_data);
+    }
+}
+
+void loadMetadata(ContextMutablePtr context, const String & default_database_name, UUID default_database_uuid)
 {
     Poco::Logger * log = &Poco::Logger::get("loadMetadata");
 
@@ -168,19 +195,20 @@ void loadMetadata(ContextMutablePtr context, const String & default_database_nam
         }
     }
 
+    TablesLoader::Databases loaded_databases;
+
     /// clickhouse-local creates DatabaseMemory as default database by itself
     /// For clickhouse-server we need create default database
-    bool create_default_db_if_not_exists = !default_database_name.empty();
-    bool metadata_dir_for_default_db_already_exists = databases.contains(default_database_name);
-    if (create_default_db_if_not_exists && !metadata_dir_for_default_db_already_exists)
+    if (!default_database_name.empty())
     {
-        checkUnsupportedVersion(context, default_database_name);
-        databases.emplace(default_database_name, std::filesystem::path(path) / escapeForFileName(default_database_name));
+        loadDefaultDatabaseImpl(context, default_database_name, default_database_uuid, has_force_restore_data_flag);
+        loaded_databases.insert({default_database_name, context->getDatabaseCatalog().getDatabase(default_database_name)});
     }
 
-    TablesLoader::Databases loaded_databases;
     for (const auto & [name, db_path] : databases)
     {
+        if (name == default_database_name)
+            continue;
         loadDatabase(context, name, db_path, has_force_restore_data_flag);
         loaded_databases.insert({name, context->getDatabaseCatalog().getDatabase(name)});
     }
@@ -332,7 +360,7 @@ static void maybeConvertOrdinaryDatabaseToAtomic(ContextMutablePtr context, cons
         {
             /// It's not quite correct to run DDL queries while database is not started up.
             ThreadPool pool;
-            DatabaseCatalog::instance().getSystemDatabase()->startupTables(pool, LoadingStrictnessLevel::FORCE_RESTORE);
+            DatabaseCatalog::defaultInstance().getSystemDatabase()->startupTables(pool, LoadingStrictnessLevel::FORCE_RESTORE);
         }
 
         auto local_context = Context::createCopy(context);
@@ -424,7 +452,7 @@ void convertDatabasesEnginesIfNeed(ContextMutablePtr context)
 void startupSystemTables()
 {
     ThreadPool pool;
-    DatabaseCatalog::instance().getSystemDatabase()->startupTables(pool, LoadingStrictnessLevel::FORCE_RESTORE);
+    DatabaseCatalog::defaultInstance().getSystemDatabase()->startupTables(pool, LoadingStrictnessLevel::FORCE_RESTORE);
 }
 
 void loadMetadataSystem(ContextMutablePtr context)
@@ -435,9 +463,9 @@ void loadMetadataSystem(ContextMutablePtr context)
 
     TablesLoader::Databases databases =
     {
-        {DatabaseCatalog::SYSTEM_DATABASE, DatabaseCatalog::instance().getSystemDatabase()},
-        {DatabaseCatalog::INFORMATION_SCHEMA, DatabaseCatalog::instance().getDatabase(DatabaseCatalog::INFORMATION_SCHEMA)},
-        {DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE, DatabaseCatalog::instance().getDatabase(DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE)},
+        {DatabaseCatalog::SYSTEM_DATABASE, DatabaseCatalog::defaultInstance().getSystemDatabase()},
+        {DatabaseCatalog::INFORMATION_SCHEMA, DatabaseCatalog::defaultInstance().getDatabase(DatabaseCatalog::INFORMATION_SCHEMA)},
+        {DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE, DatabaseCatalog::defaultInstance().getDatabase(DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE)},
     };
     TablesLoader loader{context, databases, LoadingStrictnessLevel::FORCE_RESTORE};
     loader.loadTables();

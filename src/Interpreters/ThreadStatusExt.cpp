@@ -73,7 +73,7 @@ void ThreadStatus::attachQueryContext(ContextPtr query_context_)
     query_context = query_context_;
 
     if (global_context.expired())
-        global_context = query_context_->getGlobalContext();
+        global_context = Context::getSystemCatalogContextInstance();
 
     if (thread_group)
     {
@@ -81,7 +81,7 @@ void ThreadStatus::attachQueryContext(ContextPtr query_context_)
 
         thread_group->query_context = query_context;
         if (thread_group->global_context.expired())
-            thread_group->global_context = global_context;
+            thread_group->global_context = Context::getSystemCatalogContextInstance();
     }
 
     applyQuerySettings();

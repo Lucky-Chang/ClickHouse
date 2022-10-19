@@ -313,6 +313,7 @@ void registerStorageDictionary(StorageFactory & factory)
             auto & external_dictionaries_loader = local_context->getExternalDictionariesLoader();
 
             /// A dictionary with the same full name could be defined in *.xml config files.
+            /// TODO@json.lrj dictionary id may be same in multi-catalog
             if (external_dictionaries_loader.getCurrentStatus(dictionary_id.getFullNameNotQuoted()) != ExternalLoader::Status::NOT_EXIST)
                 throw Exception(ErrorCodes::DICTIONARY_ALREADY_EXISTS,
                         "Dictionary {} already exists.", dictionary_id.getFullNameNotQuoted());

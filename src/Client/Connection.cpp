@@ -95,7 +95,8 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
     try
     {
         LOG_TRACE(log_wrapper.get(), "Connecting. Catalog: {}. Database: {}. User: {}{}{}",
-            default_database.empty() ? "(not specified)" : default_catalog, default_database,
+            default_catalog.empty() ? "(not specified)" : default_catalog,
+            default_database.empty() ? "(not specified)" : default_database,
             user,
             static_cast<bool>(secure) ? ". Secure" : "",
             static_cast<bool>(compression) ? "" : ". Uncompressed");

@@ -77,7 +77,7 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(
         }
         else if (settings.local_fs_method == LocalFSReadMethod::pread_fake_async)
         {
-            auto context = Context::getGlobalContextInstance();
+            auto context = Context::getSystemCatalogContextInstance();
             if (!context)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context not initialized");
 
@@ -87,7 +87,7 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(
         }
         else if (settings.local_fs_method == LocalFSReadMethod::pread_threadpool)
         {
-            auto context = Context::getGlobalContextInstance();
+            auto context = Context::getSystemCatalogContextInstance();
             if (!context)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context not initialized");
 

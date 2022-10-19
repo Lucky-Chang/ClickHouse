@@ -71,7 +71,7 @@ public:
 
     /// waits unit at least one flag is set
     /// caller should handle all set flags (or set it again manually)
-    /// note: keys of returen map should not be changed!
+    /// note: keys of return map should not be changed!
     /// @param finished - output parameter indicates that stop() was called
     std::unordered_map<T, std::atomic_bool> & wait(std::chrono::milliseconds timeout, bool & finished)
     {
@@ -126,6 +126,7 @@ ClusterDiscovery::ClusterDiscovery(
                 /* name_= */ key,
                 /* zk_root_= */ config.getString(prefix + ".path"),
                 /* port= */ context->getTCPPort(),
+                /* catalog= */ config.getString(prefix + ".catalog", "default"),
                 /* secure= */ config.getBool(prefix + ".secure", false),
                 /* shard_id= */ config.getUInt(prefix + ".shard", 0),
                 /* observer_mode= */ ConfigHelper::getBool(config, prefix + ".observer")
@@ -142,7 +143,7 @@ ClusterDiscovery::ClusterDiscovery(
     clusters_to_update = std::make_shared<UpdateFlags>(clusters_info_names.begin(), clusters_info_names.end());
 }
 
-/// List node in zookeper for cluster
+/// List node in zookeeper for cluster
 Strings ClusterDiscovery::getNodeNames(zkutil::ZooKeeperPtr & zk,
                                        const String & zk_root,
                                        const String & cluster_name,
@@ -219,7 +220,7 @@ ClusterPtr ClusterDiscovery::makeCluster(const ClusterInfo & cluster_info)
 {
     std::vector<std::vector<String>> shards;
     {
-        std::map<size_t, Strings> replica_adresses;
+        std::map<size_t, Strings> replica_addresses;
 
         for (const auto & [_, node] : cluster_info.nodes_info)
         {
@@ -228,11 +229,11 @@ ClusterPtr ClusterDiscovery::makeCluster(const ClusterInfo & cluster_info)
                 LOG_WARNING(log, "Node '{}' in cluster '{}' has different 'secure' value, skipping it", node.address, cluster_info.name);
                 continue;
             }
-            replica_adresses[node.shard_id].emplace_back(node.address);
+            replica_addresses[node.shard_id].emplace_back(node.address);
         }
 
-        shards.reserve(replica_adresses.size());
-        for (auto & [_, replicas] : replica_adresses)
+        shards.reserve(replica_addresses.size());
+        for (auto & [_, replicas] : replica_addresses)
             shards.emplace_back(std::move(replicas));
     }
 
@@ -240,6 +241,7 @@ ClusterPtr ClusterDiscovery::makeCluster(const ClusterInfo & cluster_info)
     auto cluster = std::make_shared<Cluster>(
         context->getSettingsRef(),
         shards,
+        "default",
         /* username= */ context->getUserName(),
         /* password= */ "",
         /* clickhouse_port= */ secure ? context->getTCPPortSecure().value_or(DBMS_DEFAULT_SECURE_PORT) : context->getTCPPort(),

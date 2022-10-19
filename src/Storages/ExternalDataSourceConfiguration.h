@@ -21,6 +21,7 @@ struct ExternalDataSourceConfiguration
     String username = "default";
     String password;
     String quota_key;
+    String catalog;
     String database;
     String table;
     String schema;

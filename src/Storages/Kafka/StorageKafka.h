@@ -130,7 +130,7 @@ private:
     size_t getPollTimeoutMillisecond() const;
 
     static Names parseTopics(String topic_list);
-    static String getDefaultClientId(const StorageID & table_id_);
+    static String getDefaultClientId(const String & host_fqdn_, UInt64 port_, const String & catalog_name_, const StorageID & table_id_);
 
     bool streamToViews();
     bool checkDependencies(const StorageID & table_id);

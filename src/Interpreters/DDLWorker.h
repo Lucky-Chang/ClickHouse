@@ -58,7 +58,7 @@ public:
     /// Note that in each task hosts are identified individually by name:port from initiator server cluster config
     std::string getCommonHostID() const
     {
-        return host_fqdn_id;
+        return host_fqdn_catalog_id;
     }
 
     std::string getQueueDir() const
@@ -125,7 +125,7 @@ protected:
     Poco::Logger * log;
 
     std::string host_fqdn;      /// current host domain name
-    std::string host_fqdn_id;   /// host_name:port
+    std::string host_fqdn_catalog_id;   /// host_name:port(catalog
     std::string queue_dir;      /// dir with queue of queries
 
     mutable std::mutex zookeeper_mutex;

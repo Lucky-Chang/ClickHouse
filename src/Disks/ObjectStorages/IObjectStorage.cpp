@@ -16,7 +16,7 @@ namespace ErrorCodes
 
 IAsynchronousReader & IObjectStorage::getThreadPoolReader()
 {
-    auto context = Context::getGlobalContextInstance();
+    auto context = Context::getSystemCatalogContextInstance();
     if (!context)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context not initialized");
 
@@ -25,7 +25,7 @@ IAsynchronousReader & IObjectStorage::getThreadPoolReader()
 
 ThreadPool & IObjectStorage::getThreadPoolWriter()
 {
-    auto context = Context::getGlobalContextInstance();
+    auto context = Context::getSystemCatalogContextInstance();
     if (!context)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context not initialized");
 

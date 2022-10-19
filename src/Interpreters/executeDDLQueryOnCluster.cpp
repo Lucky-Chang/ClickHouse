@@ -192,7 +192,7 @@ private:
 
     Strings getNewAndUpdate(const Strings & current_list_of_finished_hosts);
 
-    std::pair<String, UInt16> parseHostAndPort(const String & host_id) const;
+    std::tuple<String, UInt16, String> parseHostAndPortAndCatalog(const String & host_catalog_id) const;
 
     Chunk generateChunkWithUnfinishedHosts() const;
 
@@ -279,6 +279,7 @@ Block DDLQueryStatusSource::getSampleBlock(ContextPtr context_, bool hosts_to_wa
         return Block{
             {std::make_shared<DataTypeString>(), "host"},
             {std::make_shared<DataTypeUInt16>(), "port"},
+            {std::make_shared<DataTypeString>(), "catalog"},
             {maybe_make_nullable(std::make_shared<DataTypeInt64>()), "status"},
             {maybe_make_nullable(std::make_shared<DataTypeString>()), "error"},
             {std::make_shared<DataTypeUInt64>(), "num_hosts_remaining"},
@@ -313,17 +314,19 @@ DDLQueryStatusSource::DDLQueryStatusSource(
     timeout_seconds = context->getSettingsRef().distributed_ddl_task_timeout;
 }
 
-std::pair<String, UInt16> DDLQueryStatusSource::parseHostAndPort(const String & host_id) const
+std::tuple<String, UInt16, String> DDLQueryStatusSource::parseHostAndPortAndCatalog(const String & host_catalog_id) const
 {
-    String host = host_id;
+    String host = host_catalog_id;
     UInt16 port = 0;
+    String catalog;
     if (!is_replicated_database)
     {
-        auto host_and_port = Cluster::Address::fromString(host_id);
-        host = host_and_port.first;
-        port = host_and_port.second;
+        auto host_port_catalog = Cluster::Address::fromString(host_catalog_id);
+        host = std::get<0>(host_port_catalog);
+        port = std::get<1>(host_port_catalog);
+        catalog = std::get<2>(host_port_catalog);
     }
-    return {host, port};
+    return {host, port, catalog};
 }
 
 Chunk DDLQueryStatusSource::generateChunkWithUnfinishedHosts() const
@@ -351,9 +354,10 @@ Chunk DDLQueryStatusSource::generateChunkWithUnfinishedHosts() const
         }
         else
         {
-            auto [host, port] = parseHostAndPort(host_id);
+            auto [host, port, catalog] = parseHostAndPortAndCatalog(host_id);
             columns[num++]->insert(host);
             columns[num++]->insert(port);
+            columns[num++]->insert(catalog);
             columns[num++]->insert(Field{});
             columns[num++]->insert(Field{});
         }
@@ -463,9 +467,9 @@ Chunk DDLQueryStatusSource::generate()
                 if (is_replicated_database)
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "There was an error on {}: {} (probably it's a bug)", host_id, status.message);
 
-                auto [host, port] = parseHostAndPort(host_id);
+                auto [host, port, catalog] = parseHostAndPortAndCatalog(host_id);
                 first_exception = std::make_unique<Exception>(
-                    fmt::format("There was an error on [{}:{}]: {}", host, port, status.message), status.code);
+                    fmt::format("There was an error on [{}:{}{}]: {}", host, port, catalog.empty() ? "" : ("/" + catalog), status.message), status.code);
             }
 
             ++num_hosts_finished;
@@ -482,9 +486,10 @@ Chunk DDLQueryStatusSource::generate()
             }
             else
             {
-                auto [host, port] = parseHostAndPort(host_id);
+                auto [host, port, catalog] = parseHostAndPortAndCatalog(host_id);
                 columns[num++]->insert(host);
                 columns[num++]->insert(port);
+                columns[num++]->insert(catalog);
                 columns[num++]->insert(status.code);
                 columns[num++]->insert(status.message);
             }

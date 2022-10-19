@@ -92,7 +92,7 @@ struct StorageID
                                           const String & config_prefix);
 
     /// If dictionary has UUID, then use it as dictionary name in ExternalLoader to allow dictionary renaming.
-    /// ExternalDictnariesLoader::resolveDictionaryName(...) should be used to access such dictionaries by name.
+    /// ExternalDictionariesLoader::resolveDictionaryName(...) should be used to access such dictionaries by name.
     String getInternalDictionaryName() const { return getShortName(); }
     /// Get short, but unique, name.
     String getShortName() const;
