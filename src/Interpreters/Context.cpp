@@ -257,7 +257,7 @@ struct ContextSharedPart : boost::noncopyable
     std::atomic_size_t max_table_size_to_drop = 50000000000lu; /// Protects MergeTree tables from accidental DROP (50GB by default)
     std::atomic_size_t max_partition_size_to_drop = 50000000000lu; /// Protects MergeTree partitions from accidental DROP (50GB by default)
     String format_schema_path;                              /// Path to a directory that contains schema files used by input formats.
-    ActionLocksManagerPtr action_locks_manager;             /// Set of storages' action lockers
+    std::map<String, ActionLocksManagerPtr> action_locks_managers;  /// Set of storages' action lockers
     std::unique_ptr<SystemLogs> system_logs;                /// Used to log queries and operations on parts
     std::optional<StorageS3Settings> storage_s3_settings;   /// Settings of S3 storage
     std::vector<String> warnings;                           /// Store warning messages about server configuration.
@@ -284,7 +284,7 @@ struct ContextSharedPart : boost::noncopyable
     mutable std::mutex user_defined_catalogs_mutex;         /// Guards user defined catalogs
     String default_catalog;
 
-    std::shared_ptr<AsynchronousInsertQueue> async_insert_queue;
+    std::map<String, std::shared_ptr<AsynchronousInsertQueue>> async_insert_queues;
     std::map<String, UInt16> server_ports;
 
     bool shutdown_called = false;
@@ -3172,13 +3172,11 @@ const IHostContextPtr & Context::getHostContext() const
 
 std::shared_ptr<ActionLocksManager> Context::getActionLocksManager() const
 {
-    /// TODO@json.lrj check correct
     auto lock = getLock();
-
-    if (!shared->action_locks_manager)
-        shared->action_locks_manager = std::make_shared<ActionLocksManager>(shared_from_this());
-
-    return shared->action_locks_manager;
+    auto catalog_name = user_defined_catalog.value_or("default");
+    if (!shared->action_locks_managers.contains(catalog_name))
+        shared->action_locks_managers.emplace(catalog_name, std::make_shared<ActionLocksManager>(shared_from_this()));
+    return shared->action_locks_managers[catalog_name];
 }
 
 
@@ -3486,17 +3484,20 @@ PartUUIDsPtr Context::getIgnoredPartUUIDs() const
 
 AsynchronousInsertQueue * Context::getAsynchronousInsertQueue() const
 {
-    return shared->async_insert_queue.get();
+    auto lock = getLock();
+    auto catalog_name = user_defined_catalog.value_or("default");
+    if (!shared->async_insert_queues.contains(catalog_name))
+        throw Exception("AsynchronousInsertQueue is not initialized", ErrorCodes::NO_ELEMENTS_IN_CONFIG);
+    return shared->async_insert_queues[catalog_name].get();
 }
 
-void Context::setAsynchronousInsertQueue(const std::shared_ptr<AsynchronousInsertQueue> & ptr)
+void Context::setAsynchronousInsertQueue(std::unique_ptr<AsynchronousInsertQueue> insert_queue)
 {
-    using namespace std::chrono;
-
-    if (std::chrono::milliseconds(settings.async_insert_busy_timeout_ms) == 0ms)
-        throw Exception("Setting async_insert_busy_timeout_ms can't be zero", ErrorCodes::INVALID_SETTING_VALUE);
-
-    shared->async_insert_queue = ptr;
+    auto lock = getLock();
+    auto catalog_name = user_defined_catalog.value_or("default");
+    if (shared->async_insert_queues.contains(catalog_name))
+        throw Exception("AsynchronousInsertQueue has already been initialized", ErrorCodes::LOGICAL_ERROR);
+    shared->async_insert_queues[catalog_name] = std::move(insert_queue);
 }
 
 void Context::initializeBackgroundExecutorsIfNeeded()

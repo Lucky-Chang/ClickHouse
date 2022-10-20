@@ -267,6 +267,7 @@ namespace ErrorCodes
     extern const int MISMATCHING_USERS_FOR_PROCESS_AND_DATA;
     extern const int NETWORK_ERROR;
     extern const int CORRUPTED_DATA;
+    extern const int INVALID_SETTING_VALUE;
 }
 
 
@@ -1149,10 +1150,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
             auto * global_overcommit_tracker = global_context->getGlobalOvercommitTracker();
             total_memory_tracker.setOvercommitTracker(global_overcommit_tracker);
 
-            /// TODO@json.lrj may reload default catalog here, but Cluster address `is_local` is constant initialized.
-            if (initial_loading)
-                global_context->setDefaultCatalog(config->getString("default_catalog", "default"));
-
+            global_context->setDefaultCatalog(config->getString("default_catalog", "default"));
             // FIXME logging-related things need synchronization -- see the 'Logger * log' saved
             // in a lot of places. For now, disable updating log configuration without server restart.
             //setTextLog(global_context->getTextLog());
@@ -1412,18 +1410,10 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
     /// Load global settings from default_profile and system_profile.
     global_context->setDefaultProfiles(config());
-    const Settings & settings = global_context->getSettingsRef();
 
     /// Initialize background executors after we load default_profile config.
     /// This is needed to load proper values of background_pool_size etc.
     global_context->initializeBackgroundExecutorsIfNeeded();
-
-    if (settings.async_insert_threads)
-        global_context->setAsynchronousInsertQueue(std::make_shared<AsynchronousInsertQueue>(
-            global_context,
-            settings.async_insert_threads,
-            settings.async_insert_max_data_size,
-            AsynchronousInsertQueue::Timeout{.busy = settings.async_insert_busy_timeout_ms, .stale = settings.async_insert_stale_timeout_ms}));
 
     /// Size of cache for marks (index of MergeTree family of tables).
     size_t mark_cache_size = config().getUInt64("mark_cache_size", 5368709120);
@@ -1653,6 +1643,27 @@ int Server::main(const std::vector<std::string> & /*args*/)
         }
     }
     LOG_DEBUG(log, "Loaded metadata.");
+
+    const Settings & settings = global_context->getSettingsRef();
+    if (settings.async_insert_threads)
+    {
+        using namespace std::chrono;
+        if (std::chrono::milliseconds(settings.async_insert_busy_timeout_ms) == 0ms)
+            throw Exception("Setting async_insert_busy_timeout_ms can't be zero", ErrorCodes::INVALID_SETTING_VALUE);
+
+        global_context->setAsynchronousInsertQueue(std::make_unique<AsynchronousInsertQueue>(
+            global_context,
+            settings.async_insert_threads,
+            settings.async_insert_max_data_size,
+            AsynchronousInsertQueue::Timeout{.busy = settings.async_insert_busy_timeout_ms, .stale = settings.async_insert_stale_timeout_ms}));
+
+        for (auto && [_, catalog_context] : user_catalog_contexts)
+            catalog_context->setAsynchronousInsertQueue(std::make_unique<AsynchronousInsertQueue>(
+                catalog_context,
+                settings.async_insert_threads,
+                settings.async_insert_max_data_size,
+                AsynchronousInsertQueue::Timeout{.busy = settings.async_insert_busy_timeout_ms, .stale = settings.async_insert_stale_timeout_ms}));
+    }
 
     /// Init trace collector only after trace_log system table was created
     /// Disable it if we collect test coverage information, because it will work extremely slow.

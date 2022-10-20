@@ -50,8 +50,11 @@ inline bool isLocalImpl(const Cluster::Address & address, const Poco::Net::Socke
     /// Also, replica is considered non-local, if it has default database set
     ///  (only reason is to avoid query rewrite).
 
-    auto local_catalog = Context::getSystemCatalogContextInstance()->getDefaultCatalogName();
-    return address.default_database.empty() && isLocalAddress(resolved_address, clickhouse_port) && address.default_catalog == local_catalog;
+    /// TODO@json.lrj 当前判断is_local的逻辑并不完备，无法使用。
+    /// 如果is_local的话就会不切换runtime context直接发起子查询，所以is_local标识的是当前进程并且catalog context相同，这样的语义下is_local无法静态判断的。
+    /// address.default_catalog为"XXX"表示访问XXX catalog，需要根据当前查询线程所在的Catalog来判断是否`local`
+    /// address.default_catalog为""表示访问节点配置的默认catalog，这个默认值可以从GlobalContext中获取，然后结合默认值比较当前查询线程所在的Catalog来判断
+    return address.default_database.empty() && isLocalAddress(resolved_address, clickhouse_port) && address.default_catalog == "impossible";
 }
 
 void concatInsertPath(std::string & insert_path, const std::string & dir_name)
